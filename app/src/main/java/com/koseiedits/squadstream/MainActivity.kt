@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -252,11 +253,15 @@ class MainActivity : ComponentActivity() {
         ) {
             Text("SquadStream", style = MaterialTheme.typography.headlineMedium)
             Text(
-                "Screen + game audio + mic → YouTube Live (RTMP)",
+                "Stream your game to YouTube and talk with your squad.",
                 style = MaterialTheme.typography.bodyMedium
             )
 
-            Text("Status: $status", style = MaterialTheme.typography.bodyLarge)
+            Text(
+                "● $status",
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (isStreaming) Color(0xFF2E7D32) else Color.Gray
+            )
             if (isStreaming) {
                 Text(
                     "Upload: ${measured / 1000} kbps • Encoder: ${encoderBps / 1000} kbps",
@@ -283,7 +288,7 @@ class MainActivity : ComponentActivity() {
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
             )
 
-            Text("Quality", style = MaterialTheme.typography.titleMedium)
+            Text("Video quality", style = MaterialTheme.typography.titleMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 StreamConfig.PRESETS.forEach { preset ->
                     FilterChip(
@@ -295,7 +300,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            Text("Audio", style = MaterialTheme.typography.titleMedium)
+            Text("What your stream hears", style = MaterialTheme.typography.titleMedium)
             AudioMode.entries.forEach { mode ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     RadioButton(
@@ -333,18 +338,21 @@ class MainActivity : ComponentActivity() {
 
             Button(
                 onClick = { if (isStreaming) onStopTapped() else onStartTapped() },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().height(56.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = if (isStreaming) Color(0xFFC62828) else Color(0xFF2E7D32)
                 )
             ) {
-                Text(if (isStreaming) "STOP STREAM" else "START STREAM")
+                Text(
+                    if (isStreaming) "STOP STREAM" else "START STREAM",
+                    style = MaterialTheme.typography.titleMedium
+                )
             }
 
-            Text("Floating controls (in-game bubble)", style = MaterialTheme.typography.titleMedium)
+            Text("In-game bubble", style = MaterialTheme.typography.titleMedium)
             Text(
-                "A small bubble floats over your game: stop/start, mic mute, " +
-                    "mic/game mix and live bitrate — without leaving the game.",
+                "A bubble floats over your game so you can control the stream " +
+                    "without leaving it: stop/start, mic mute, mic/game mix, live bitrate.",
                 style = MaterialTheme.typography.bodySmall
             )
             if (!overlayGranted) {
@@ -389,7 +397,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            Text("Squad voice (communication room)", style = MaterialTheme.typography.titleMedium)
+            Text("Squad voice", style = MaterialTheme.typography.titleMedium)
             Text(
                 if (BuildConfig.ABLY_API_KEY.isNotBlank())
                     "Talk with your squad while you play. The key is built in — leave the field blank to use it, or paste a different one to override."
@@ -462,7 +470,7 @@ class MainActivity : ComponentActivity() {
                 ) { Text("LEAVE ROOM") }
             }
 
-            Text("Log", style = MaterialTheme.typography.titleMedium)
+            Text("Recent activity", style = MaterialTheme.typography.titleMedium)
             logLines.forEach { line ->
                 Text(line, style = MaterialTheme.typography.bodySmall)
             }
