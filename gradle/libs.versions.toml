@@ -1,7 +1,10 @@
 [versions]
 # Pinned to a known-good set (Nov 2026). Bump only one at a time if a build fails.
+# Kotlin MUST be 2.2.x: RootEncoder pulls kotlinx-coroutines 1.11.0, whose
+# metadata is Kotlin 2.2.0 — the 2.0.21 compiler crashes on it
+# (FirIncompatibleClassExpressionChecker: "source must not be null").
 agp = "8.7.3"
-kotlin = "2.0.21"
+kotlin = "2.2.0"
 composeBom = "2024.09.00"
 coreKtx = "1.13.1"
 lifecycleRuntimeKtx = "2.8.5"
