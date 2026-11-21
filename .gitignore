@@ -1,0 +1,14 @@
+*.iml
+.gradle
+/local.properties
+/.idea/
+.DS_Store
+/build
+/captures
+*.apk
+*.aab
+app/build/
+*.jks
+*.keystore
+# NEVER commit a stream key or any secret.
+local.properties
