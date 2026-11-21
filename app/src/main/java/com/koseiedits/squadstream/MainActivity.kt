@@ -6,8 +6,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -43,9 +45,16 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 class MainActivity : ComponentActivity() {
 
+    companion object {
+        /** Set by the HUD bubble's START button: open the app and start streaming. */
+        const val EXTRA_AUTO_START_CAPTURE = "auto_start_capture"
+    }
+
     private val mediaProjectionManager by lazy {
         getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
     }
+
+    private val prefs by lazy { getSharedPreferences(HudService.PREFS, Context.MODE_PRIVATE) }
 
     // Form state lives in the Activity so the service-start flow can read it.
     // The stream key is kept in memory only — it is never saved to disk.
@@ -53,6 +62,10 @@ class MainActivity : ComponentActivity() {
     private var streamKey by mutableStateOf("")
     private var selectedPreset by mutableStateOf(StreamConfig.PRESETS[0])
     private var audioMode by mutableStateOf(AudioMode.MIX)
+
+    // Phase 2 — floating controls state.
+    private var hudEnabled by mutableStateOf(false)
+    private var overlayGranted by mutableStateOf(false)
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -72,9 +85,66 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val overlayPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        // Returning from Settings: re-check, the user may have granted it.
+        refreshHudState()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        refreshHudState()
+        // If the bubble's START button opened us, restore the bubble if the
+        // user had it on (the service may have been killed while gaming).
+        if (hudEnabled && overlayGranted) startHudService()
         setContent { SquadStreamScreen() }
+        // Defer the auto-start so the capture/permission launchers fire
+        // after the activity is fully created, not inside onCreate.
+        window.decorView.post { handleAutoStartIntent(intent) }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleAutoStartIntent(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        refreshHudState()
+    }
+
+    /**
+     * The HUD bubble's START button opens the app with this extra. Start the
+     * stream at once when a key is already pasted; otherwise just show the
+     * form so the user can paste the key first.
+     */
+    private fun handleAutoStartIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra(EXTRA_AUTO_START_CAPTURE, false) != true) return
+        intent.removeExtra(EXTRA_AUTO_START_CAPTURE)
+        if (streamKey.isBlank()) {
+            toast("Paste your stream key first, then tap START")
+            return
+        }
+        onStartTapped()
+    }
+
+    private fun refreshHudState() {
+        hudEnabled = prefs.getBoolean(HudService.PREF_HUD_ENABLED, false)
+        overlayGranted = Settings.canDrawOverlays(this)
+    }
+
+    private fun startHudService() {
+        startService(Intent(this, HudService::class.java).apply {
+            action = HudService.ACTION_START_HUD
+        })
+    }
+
+    private fun stopHudService() {
+        startService(Intent(this, HudService::class.java).apply {
+            action = HudService.ACTION_STOP_HUD
+        })
     }
 
     @Composable
@@ -142,7 +212,25 @@ class MainActivity : ComponentActivity() {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     RadioButton(
                         selected = audioMode == mode,
-                        onClick = { audioMode = mode },
+                        onClick = {
+                            audioMode = mode
+                            // The radio is a preset for the live mix gains
+                            // (the HUD sliders move the same values).
+                            when (mode) {
+                                AudioMode.MIX -> {
+                                    StreamState.setMicGain(100)
+                                    StreamState.setGameGain(100)
+                                }
+                                AudioMode.INTERNAL_ONLY -> {
+                                    StreamState.setMicGain(0)
+                                    StreamState.setGameGain(100)
+                                }
+                                AudioMode.MIC_ONLY -> {
+                                    StreamState.setMicGain(100)
+                                    StreamState.setGameGain(0)
+                                }
+                            }
+                        },
                         enabled = !isStreaming
                     )
                     Text(
@@ -163,6 +251,54 @@ class MainActivity : ComponentActivity() {
                 )
             ) {
                 Text(if (isStreaming) "STOP STREAM" else "START STREAM")
+            }
+
+            Text("Floating controls (in-game bubble)", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "A small bubble floats over your game: stop/start, mic mute, " +
+                    "mic/game mix and live bitrate — without leaving the game.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            if (!overlayGranted) {
+                Text(
+                    "Needs the 'Display over other apps' permission.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Button(
+                    onClick = {
+                        overlayPermissionLauncher.launch(
+                            Intent(
+                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:$packageName")
+                            )
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Allow display over other apps")
+                }
+            } else if (!hudEnabled) {
+                Button(
+                    onClick = {
+                        prefs.edit().putBoolean(HudService.PREF_HUD_ENABLED, true).apply()
+                        hudEnabled = true
+                        startHudService()
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Enable floating controls")
+                }
+            } else {
+                Button(
+                    onClick = {
+                        prefs.edit().putBoolean(HudService.PREF_HUD_ENABLED, false).apply()
+                        hudEnabled = false
+                        stopHudService()
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Disable floating controls")
+                }
             }
 
             Text("Log", style = MaterialTheme.typography.titleMedium)
