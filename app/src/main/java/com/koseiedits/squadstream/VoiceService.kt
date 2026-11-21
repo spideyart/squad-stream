@@ -40,8 +40,7 @@ class VoiceService : Service() {
         const val ACTION_TOGGLE_SPEAKER =
             "com.koseiedits.squadstream.ACTION_TOGGLE_VOICE_SPEAKER"
 
-        const val EXTRA_SUPABASE_URL = "supabase_url"
-        const val EXTRA_SUPABASE_KEY = "supabase_key"
+        const val EXTRA_ABLY_KEY = "ably_key"
         const val EXTRA_ROOM_CODE = "room_code"
         const val EXTRA_NAME = "name"
 
@@ -106,12 +105,11 @@ class VoiceService : Service() {
     }
 
     private fun handleJoin(intent: Intent) {
-        val url = intent.getStringExtra(EXTRA_SUPABASE_URL).orEmpty().trim()
-        val key = intent.getStringExtra(EXTRA_SUPABASE_KEY).orEmpty().trim()
+        val key = intent.getStringExtra(EXTRA_ABLY_KEY).orEmpty().trim()
         val code = intent.getStringExtra(EXTRA_ROOM_CODE).orEmpty().trim().uppercase()
         val name = intent.getStringExtra(EXTRA_NAME).orEmpty().trim()
-        if (url.isBlank() || key.isBlank()) {
-            StreamState.addLog("Voice room needs the Supabase URL + anon key first")
+        if (key.isBlank()) {
+            StreamState.addLog("Voice room needs the Ably API key first")
             stopSelf()
             return
         }
@@ -130,7 +128,7 @@ class VoiceService : Service() {
             buildNotification(),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE,
         )
-        roomManager.join(url, key, code, name)
+        roomManager.join(key, code, name)
         updateNotification()
     }
 
