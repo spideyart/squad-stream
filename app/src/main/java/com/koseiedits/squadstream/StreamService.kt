@@ -27,9 +27,11 @@ import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import com.pedro.common.ConnectChecker
 import com.pedro.encoder.input.gl.render.filters.AndroidViewFilterRender
+import com.pedro.encoder.input.sources.audio.AudioSource
 import com.pedro.encoder.input.sources.audio.InternalAudioSource
 import com.pedro.encoder.input.sources.audio.MicrophoneSource
 import com.pedro.encoder.input.sources.audio.MixAudioSource
+import com.pedro.encoder.input.sources.audio.NoAudioSource
 import com.pedro.encoder.input.sources.video.NoVideoSource
 import com.pedro.encoder.input.sources.video.ScreenSource
 import com.pedro.library.generic.GenericStream
@@ -53,6 +55,12 @@ import com.pedro.library.generic.GenericStream
  * internal game audio (AudioPlaybackCapture, USAGE_GAME + USAGE_MEDIA).
  * The custom 3-channel PCM mixer in Phase 4 adds squad voices as a third
  * source — the library cannot mix WebRTC audio, so that part is ours.
+ *
+ * Audio (Phase 2): the HUD mix sliders drive applyAudioMix(), which swaps
+ * the audio source at runtime (changeAudioSource is safe while streaming):
+ * Mix ↔ Mic-only ↔ Game-only ↔ silence. The library has no per-source
+ * gain, so a slider at 0 switches its source off; true per-channel gain
+ * (0–100 volume, not just on/off) arrives with the Phase 4 mixer.
  */
 class StreamService : Service(), ConnectChecker {
 
@@ -63,6 +71,14 @@ class StreamService : Service(), ConnectChecker {
 
         const val ACTION_START = "com.koseiedits.squadstream.ACTION_START"
         const val ACTION_STOP = "com.koseiedits.squadstream.ACTION_STOP"
+
+        // Phase 2 — HUD commands.
+        const val ACTION_SET_MIC_GAIN = "com.koseiedits.squadstream.ACTION_SET_MIC_GAIN"
+        const val ACTION_SET_GAME_GAIN = "com.koseiedits.squadstream.ACTION_SET_GAME_GAIN"
+        const val ACTION_TOGGLE_SQUAD_MUTE =
+            "com.koseiedits.squadstream.ACTION_TOGGLE_SQUAD_MUTE"
+
+        const val EXTRA_GAIN = "gain"
 
         const val EXTRA_RESULT_CODE = "result_code"
         const val EXTRA_RESULT_DATA = "result_data"
@@ -85,6 +101,7 @@ class StreamService : Service(), ConnectChecker {
     private var currentEncoderBitrate = 0
     private var lastAdaptMs = 0L
     private var lowBitrateStreak = 0
+    private var currentAudioKind = AudioKind.MIX
 
     private val mediaProjectionManager by lazy {
         applicationContext.getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
@@ -117,6 +134,9 @@ class StreamService : Service(), ConnectChecker {
         when (intent.action) {
             ACTION_START -> handleStart(intent)
             ACTION_STOP -> handleStop()
+            ACTION_SET_MIC_GAIN -> handleSetMicGain(intent)
+            ACTION_SET_GAME_GAIN -> handleSetGameGain(intent)
+            ACTION_TOGGLE_SQUAD_MUTE -> handleToggleSquadMute()
         }
         return START_NOT_STICKY
     }
@@ -184,6 +204,7 @@ class StreamService : Service(), ConnectChecker {
         }
         genericStream.startStream(cfg.fullUrl)
         StreamState.setStreaming(true)
+        StreamState.setStartedAt(SystemClock.elapsedRealtime())
         StreamState.setStatus("Live • ${cfg.label}")
         StreamState.setEncoderBitrate(cfg.videoBitrateBps)
         StreamState.addLog("Streaming to YouTube (${cfg.label}, ${cfg.audioMode})")
@@ -227,12 +248,10 @@ class StreamService : Service(), ConnectChecker {
 
             val projection = mediaProjection ?: return false
             genericStream.changeVideoSource(ScreenSource(applicationContext, projection))
-            when (cfg.audioMode) {
-                AudioMode.MIX -> genericStream.changeAudioSource(MixAudioSource(projection))
-                AudioMode.INTERNAL_ONLY ->
-                    genericStream.changeAudioSource(InternalAudioSource(projection))
-                AudioMode.MIC_ONLY -> genericStream.changeAudioSource(MicrophoneSource())
-            }
+            // Phase 2: the initial audio source comes from the live mix gains
+            // (MainActivity's audio-mode radio writes them before Start).
+            currentAudioKind = audioKindForGains()
+            genericStream.changeAudioSource(audioSourceForGains(projection))
             applyLiveBadgeOverlay(cfg)
             true
         } catch (e: Exception) {
@@ -305,6 +324,7 @@ class StreamService : Service(), ConnectChecker {
         }
         prepared = false
         config = null
+        currentAudioKind = AudioKind.MIX
         StreamState.reset()
         StreamState.addLog("Stream stopped")
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -363,6 +383,69 @@ class StreamService : Service(), ConnectChecker {
             .setOngoing(true)
             .setSilent(true)
             .build()
+    }
+
+    // ---- Phase 2: live audio mix (HUD) ----
+
+    private fun audioKindForGains(): AudioKind {
+        val micOn = StreamState.micGain.value > 0
+        val gameOn = StreamState.gameGain.value > 0
+        return when {
+            micOn && gameOn -> AudioKind.MIX
+            micOn -> AudioKind.MIC_ONLY
+            gameOn -> AudioKind.GAME_ONLY
+            else -> AudioKind.NONE
+        }
+    }
+
+    private fun audioSourceForGains(projection: MediaProjection): AudioSource {
+        return when (audioKindForGains()) {
+            AudioKind.MIX -> MixAudioSource(projection)
+            AudioKind.MIC_ONLY -> MicrophoneSource()
+            AudioKind.GAME_ONLY -> InternalAudioSource(projection)
+            AudioKind.NONE -> NoAudioSource()
+        }
+    }
+
+    /**
+     * Swaps the audio source only when the effective mix actually changed,
+     * so dragging a slider doesn't recreate sources on every tick.
+     */
+    private fun applyAudioMix() {
+        val kind = audioKindForGains()
+        if (kind == currentAudioKind) return
+        currentAudioKind = kind
+        if (!::genericStream.isInitialized || !genericStream.isStreaming) return
+        val projection = mediaProjection ?: return
+        try {
+            genericStream.changeAudioSource(audioSourceForGains(projection))
+            StreamState.addLog("Audio mix → $kind")
+        } catch (e: Exception) {
+            Log.w(TAG, "Audio mix switch failed", e)
+            StreamState.addLog("Audio mix failed: ${e.message}")
+        }
+    }
+
+    private fun handleSetMicGain(intent: Intent) {
+        StreamState.setMicGain(intent.getIntExtra(EXTRA_GAIN, 100))
+        applyAudioMix()
+        if (!StreamState.isStreaming.value) stopSelf()
+    }
+
+    private fun handleSetGameGain(intent: Intent) {
+        StreamState.setGameGain(intent.getIntExtra(EXTRA_GAIN, 100))
+        applyAudioMix()
+        if (!StreamState.isStreaming.value) stopSelf()
+    }
+
+    private fun handleToggleSquadMute() {
+        val muted = !StreamState.squadMuted.value
+        StreamState.setSquadMuted(muted)
+        StreamState.addLog(
+            if (muted) "Squad muted (takes effect in Phase 3)"
+            else "Squad unmuted"
+        )
+        if (!StreamState.isStreaming.value) stopSelf()
     }
 
     // ---- adaptive bitrate (simple, conservative) ----
@@ -430,4 +513,9 @@ class StreamService : Service(), ConnectChecker {
     override fun onAuthSuccess() {
         StreamState.addLog("RTMP auth OK")
     }
+}
+
+/** Effective audio mix, derived from the HUD's mic/game gains. */
+private enum class AudioKind {
+    MIX, MIC_ONLY, GAME_ONLY, NONE
 }
