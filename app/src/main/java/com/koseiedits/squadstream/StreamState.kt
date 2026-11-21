@@ -38,6 +38,23 @@ object StreamState {
     private val _startedAtMs = MutableStateFlow(0L)
     val startedAtMs: StateFlow<Long> = _startedAtMs.asStateFlow()
 
+    // ---- Phase 3: squad voice room (independent of streaming) ----
+    private val _voiceRoomCode = MutableStateFlow("")
+    val voiceRoomCode: StateFlow<String> = _voiceRoomCode.asStateFlow()
+
+    private val _voiceConnected = MutableStateFlow(false)
+    val voiceConnected: StateFlow<Boolean> = _voiceConnected.asStateFlow()
+
+    /** Display names of the other peers in the room (not including you). */
+    private val _voicePeers = MutableStateFlow<List<String>>(emptyList())
+    val voicePeers: StateFlow<List<String>> = _voicePeers.asStateFlow()
+
+    private val _voiceMicMuted = MutableStateFlow(false)
+    val voiceMicMuted: StateFlow<Boolean> = _voiceMicMuted.asStateFlow()
+
+    private val _voiceSpeakerOn = MutableStateFlow(true)
+    val voiceSpeakerOn: StateFlow<Boolean> = _voiceSpeakerOn.asStateFlow()
+
     private val _log = MutableStateFlow<List<String>>(emptyList())
     val log: StateFlow<List<String>> = _log.asStateFlow()
 
@@ -49,6 +66,11 @@ object StreamState {
     fun setGameGain(gain: Int) { _gameGain.value = gain.coerceIn(0, 100) }
     fun setSquadMuted(muted: Boolean) { _squadMuted.value = muted }
     fun setStartedAt(ms: Long) { _startedAtMs.value = ms }
+    fun setVoiceRoomCode(code: String) { _voiceRoomCode.value = code }
+    fun setVoiceConnected(connected: Boolean) { _voiceConnected.value = connected }
+    fun setVoicePeers(peers: List<String>) { _voicePeers.value = peers }
+    fun setVoiceMicMuted(muted: Boolean) { _voiceMicMuted.value = muted }
+    fun setVoiceSpeakerOn(on: Boolean) { _voiceSpeakerOn.value = on }
 
     fun addLog(line: String) {
         val time = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
@@ -64,5 +86,14 @@ object StreamState {
         _gameGain.value = 100
         _squadMuted.value = false
         _startedAtMs.value = 0L
+    }
+
+    /** Clears voice-room state only (stream state is untouched). */
+    fun resetVoice() {
+        _voiceRoomCode.value = ""
+        _voiceConnected.value = false
+        _voicePeers.value = emptyList()
+        _voiceMicMuted.value = false
+        _voiceSpeakerOn.value = true
     }
 }
