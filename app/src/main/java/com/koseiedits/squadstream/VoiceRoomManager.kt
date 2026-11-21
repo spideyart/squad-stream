@@ -233,6 +233,11 @@ class VoiceRoomManager(private val appContext: Context) {
                         to = msg.from, name = myName,
                     )
                 )
+                // The lower peer id offers — do it here too. If I joined
+                // first, the other side never saw my JOIN, so no HELLO will
+                // ever come back to me; waiting for one deadlocked the pair
+                // half the time (names showed, but no call ever started).
+                if (myId < msg.from) createOfferTo(msg.from)
                 updatePeersFlow()
             }
             SignalTypes.HELLO -> {
