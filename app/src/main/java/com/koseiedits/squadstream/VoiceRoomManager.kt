@@ -28,9 +28,8 @@ import java.util.concurrent.ConcurrentHashMap
  * Phase 3 — 4-person WebRTC mesh voice room (audio only).
  *
  * Mesh, no server in the middle: every peer holds one PeerConnection per
- * other peer (max 3). Signaling rides Supabase Broadcast (see
- * SupabaseSignaling). One rule keeps the mesh glare-free: when two peers
- * learn of each other, the one with the LOWER peer id sends the offer;
+ * other peer (max 3). Signaling rides Ably Realtime (see AblySignaling).
+ * One rule keeps the mesh glare-free: when two peers learn of each other, the one with the LOWER peer id sends the offer;
  * the other waits and answers. Both sides compute the same offerer from
  * the same two ids, so nobody offers twice.
  *
@@ -65,7 +64,7 @@ class VoiceRoomManager(private val appContext: Context) {
     private var factory: PeerConnectionFactory? = null
     private var audioSource: AudioSource? = null
     private var localTrack: AudioTrack? = null
-    private var signaling: SupabaseSignaling? = null
+    private var signaling: AblySignaling? = null
 
     private val peers = ConcurrentHashMap<String, PeerConnection>()
     private val peerNames = ConcurrentHashMap<String, String>()
@@ -80,7 +79,7 @@ class VoiceRoomManager(private val appContext: Context) {
 
     // ---- join / leave ----
 
-    fun join(url: String, key: String, code: String, name: String) {
+    fun join(apiKey: String, code: String, name: String) {
         rtcHandler.post {
             if (joined) {
                 if (roomCode == code) return@post
@@ -99,7 +98,7 @@ class VoiceRoomManager(private val appContext: Context) {
             }
             audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
             audioManager.isSpeakerphoneOn = speakerOn
-            val sig = SupabaseSignaling(url, key, code)
+            val sig = AblySignaling(apiKey, code)
             signaling = sig
             scope.launch { sig.incoming.collect { handleSignal(it) } }
             sig.start {
