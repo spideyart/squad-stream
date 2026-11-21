@@ -47,9 +47,13 @@ Key facts (verified against the RootEncoder 2.8.2 docs + official screen example
   measured upload throughput; the encoder steps down (min 800 kbps) only
   after two bad readings, steps back up toward the configured target, and
   never changes more often than every 10 s.
-- The `● LIVE SQUADSTREAM` badge is a best-effort OpenGL overlay
-  (`AndroidViewFilterRender`). If it ever fails, the stream continues
-  without it — overlay code is wrapped so it can never break streaming.
+- The `● LIVE SQUADSTREAM` watermark is a best-effort OpenGL overlay
+  (`AndroidViewFilterRender`), sized to the stream frame (~1.6% of frame
+  width) and fading in/out on a slow loop. If it ever fails, the stream
+  continues without it — overlay code is wrapped so it can never break
+  streaming.
+- App icon: an adaptive icon (white play triangle + red live dot on dark,
+  `res/mipmap-anydpi-v26/` + `res/drawable/ic_launcher_foreground.xml`).
 
 ## Phase 2 — floating HUD
 
@@ -267,8 +271,8 @@ table — don't skip ahead.
    ("Start now"). Status should go Connecting → Live within ~10 s.
    A "SquadStream — LIVE" notification appears with a Stop button.
 4. **YouTube sees it.** In YouTube Studio → Go Live, the preview shows
-   your phone screen within ~30 s. The red `● LIVE SQUADSTREAM` badge is
-   in the top-left corner.
+   your phone screen within ~30 s. The small `● LIVE SQUADSTREAM`
+   watermark fades in and out in the top-left corner.
 5. **Game audio.** Open Free Fire MAX and play. Viewers (or the Studio
    preview) hear game sound. Talk: your mic is in the mix too.
 6. **Adaptive bitrate.** Watch the "Upload / Encoder" line in the app.
