@@ -1,5 +1,14 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
+// Phase 3 — Ably key, baked in at build time from a GitHub Actions secret
+// (ABLY_API_KEY). Never committed to git, never typed into the app.
+// When the secret is absent (a local build, or before the secret is set),
+// the field is empty and the app falls back to the key pasted in the
+// Squad voice section.
+val ablyApiKey: String = System.getenv("ABLY_API_KEY").orEmpty()
+    .replace("\\", "\\\\")
+    .replace("\"", "\\\"")
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -17,6 +26,8 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "1.0-phase3"
+        // Baked-in Ably key (empty until the ABLY_API_KEY secret is set).
+        buildConfigField("String", "ABLY_API_KEY", "\"$ablyApiKey\"")
         // WebRTC ships native libs per ABI; arm64 + armv7 cover every
         // modern phone and keep the APK from ballooning with x86 libs.
         ndk {
@@ -44,6 +55,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
