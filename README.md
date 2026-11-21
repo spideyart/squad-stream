@@ -116,8 +116,9 @@ voice back. Remote voices play through the phone speaker by default.
 Signaling is Ably Realtime: one channel per room code, one event
 (`signal`) carrying the join/hello/offer/answer/ICE/leave messages as
 JSON strings. No tables, no database, no login — the API key is all the
-auth there is. The key is typed into the app once and kept in
-SharedPreferences, never in code or git.
+auth there is. The key is baked into the build from a GitHub secret
+(see below) — never in code, never in git, never typed into the app.
+The paste-in field in the app remains as an override.
 
 Ably replaced Supabase here: Supabase's free tier pauses the project
 after 7 days of inactivity, and its Kotlin client (supabase-kt) changed
@@ -138,10 +139,26 @@ server yet.
    an app** (any name).
 2. In the app: **API Keys** → copy the key (it looks like
    `xVLy...:xxx...`). It is the root key — it can do everything in
-   that app, so keep it inside the squad.
-3. In the SquadStream app, under *Squad voice*, paste the key and type
-   your name. It is saved on your phone only.
-4. That's it — no tables, no SQL, no extra settings.
+   that app, so keep it inside the squad. **Do not paste it into any
+   chat or file — the next two steps are the only places it goes.**
+3. In the GitHub repo: **Settings → Secrets and variables → Actions →
+   New repository secret**. Name: `ABLY_API_KEY`. Secret: paste the key.
+4. In the repo, open **.github/workflows/android.yml** and add two lines
+   to the *Build debug APK* step, so it reads:
+   ```yaml
+   - name: Build debug APK
+     env:
+       ABLY_API_KEY: ${{ secrets.ABLY_API_KEY }}
+     run: gradle assembleDebug --stacktrace
+   ```
+5. That's it. The next build bakes the key into the APK — install it
+   and the voice room just works, no typing. The key field in the app
+   stays as an override: leave it blank to use the built-in key, or
+   paste a different one to override it.
+
+If the key ever leaks or needs rotating: regenerate it in the Ably
+dashboard, update the GitHub secret, and the next build carries the new
+one (clear the paste-in field on any phone that had the old key typed in).
 
 ### Room flow
 
@@ -158,11 +175,12 @@ server yet.
 
 ### Phase 3 verification test
 
-1. **Setup.** Do the Ably steps above on one phone.
+1. **Setup.** Do the Ably steps above once — the key is baked into the
+   build, so the squad installs the APK and never types a key.
 2. **Create.** Tap Create room — a code appears, status "Waiting for
    squad mates…". A "Squad voice • Room CODE" notification appears.
-3. **Join (second phone).** Same Ably API key, paste the code, Join
-   — both phones list each other by name within a few seconds.
+3. **Join (second phone).** Install the same APK, type your name, paste
+   the code, Join — both phones list each other by name within a few seconds.
 4. **Talk.** Speak on phone A: phone B hears you through the speaker.
    Speak on phone B: phone A hears you. No game audio leaks into the
    room (start a stream too and check the YouTube preview still has
