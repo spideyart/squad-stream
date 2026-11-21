@@ -52,10 +52,8 @@ dependencies {
     implementation(libs.rootencoder.library)
     // Phase 3 — WebRTC voice room (webrtc-sdk fork, org.webrtc.* API)
     implementation(libs.webrtc.sdk)
-    // Phase 3 — Supabase Realtime signaling + JSON for signal messages
-    implementation(platform(libs.supabase.bom))
-    implementation(libs.supabase.realtime)
-    implementation(libs.ktor.client.okhttp)
+    // Phase 3 — Ably Realtime signaling + JSON for signal messages
+    implementation(libs.ably.java)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
