@@ -16,7 +16,12 @@
     <!-- Foreground-service notification (Android 13+, runtime permission) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- Phase 2 will add SYSTEM_ALERT_WINDOW for the floating HUD bubble. -->
+    <!-- Phase 2: floating HUD bubble over the game. SYSTEM_ALERT_WINDOW is a
+         special permission: the user grants it in Settings ("Display over
+         other apps"). The HUD service runs as a foreground service of type
+         specialUse (it fits no other type). -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
     <application
         android:allowBackup="true"
@@ -42,5 +47,17 @@
             android:name=".StreamService"
             android:exported="false"
             android:foregroundServiceType="mediaProjection|microphone" />
+
+        <!-- Phase 2: floating HUD. specialUse is the only fitting type; the
+             subtype property is required for it on Android 14+. No type is
+             passed on older Android (the 2-arg startForeground is used). -->
+        <service
+            android:name=".HudService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="floating in-game stream controls" />
+        </service>
     </application>
 </manifest>
