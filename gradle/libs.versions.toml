@@ -14,11 +14,11 @@ rootencoder = "2.8.2"
 # (last 1.0.32006, Aug 2020, JCenter gone); use the maintained webrtc-sdk
 # fork, same org.webrtc.* package, newest 150-series build (Nov 2026).
 webrtc = "150.7871.01"
-# Supabase Realtime (Broadcast) for voice-room signaling. supabase-kt 3.x;
-# the BOM pins the module versions. Ktor engine (okhttp) is required
-# explicitly — supabase-kt never brings an engine transitively.
-supabaseBom = "3.9.0"
-ktor = "3.3.0"
+# Phase 3 — voice-room signaling over Ably Realtime (pub/sub, no database).
+# Supabase was dropped: its free tier pauses the project after 7 days of
+# inactivity, and its Kotlin client changed API in 3.9.0. Ably free tier:
+# 6M messages/month, 200 concurrent connections, no card, no time limit.
+ably = "1.8.2"
 kotlinxSerialization = "1.9.0"
 
 [libraries]
@@ -36,10 +36,8 @@ androidx-material3 = { group = "androidx.compose.material3", name = "material3" 
 rootencoder-library = { group = "com.github.pedroSG94.RootEncoder", name = "library", version.ref = "rootencoder" }
 # Phase 3 — WebRTC voice room (maintained webrtc-sdk fork, org.webrtc.* API)
 webrtc-sdk = { group = "io.github.webrtc-sdk", name = "android", version.ref = "webrtc" }
-# Phase 3 — Supabase Realtime signaling (Broadcast channels, no tables needed)
-supabase-bom = { group = "io.github.jan-tennert.supabase", name = "bom", version.ref = "supabaseBom" }
-supabase-realtime = { group = "io.github.jan-tennert.supabase", name = "realtime-kt" }
-ktor-client-okhttp = { group = "io.ktor", name = "ktor-client-okhttp", version.ref = "ktor" }
+# Phase 3 — Ably Realtime signaling (pub/sub channels, no database needed)
+ably-java = { group = "io.ably", name = "ably-java", version.ref = "ably" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
 
 [plugins]
