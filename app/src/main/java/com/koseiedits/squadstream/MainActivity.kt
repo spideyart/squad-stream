@@ -157,6 +157,12 @@ class MainActivity : ComponentActivity() {
 
     // ---- Phase 3: squad voice room ----
 
+    // The key the app actually uses: whatever was pasted in the field,
+    // otherwise the key baked in at build time (GitHub secret ABLY_API_KEY).
+    // The paste field is an override — leave it blank to use the built-in key.
+    private fun effectiveAblyKey(): String =
+        ablyKey.trim().ifBlank { BuildConfig.ABLY_API_KEY }
+
     private fun saveVoicePrefs() {
         prefs.edit()
             .putString("ably_key", ablyKey.trim())
@@ -180,7 +186,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startVoiceJoin(code: String) {
-        if (ablyKey.isBlank()) {
+        if (effectiveAblyKey().isBlank()) {
             toast("Paste the Ably API key first")
             return
         }
@@ -199,7 +205,7 @@ class MainActivity : ComponentActivity() {
     private fun startVoiceService(code: String) {
         val intent = Intent(this, VoiceService::class.java).apply {
             action = VoiceService.ACTION_JOIN
-            putExtra(VoiceService.EXTRA_ABLY_KEY, ablyKey.trim())
+            putExtra(VoiceService.EXTRA_ABLY_KEY, effectiveAblyKey())
             putExtra(VoiceService.EXTRA_ROOM_CODE, code)
             putExtra(VoiceService.EXTRA_NAME, voiceName.trim())
         }
@@ -385,7 +391,10 @@ class MainActivity : ComponentActivity() {
 
             Text("Squad voice (communication room)", style = MaterialTheme.typography.titleMedium)
             Text(
-                "Talk with your squad while you play. Needs a free Ably account first (one-time setup — see the README).",
+                if (BuildConfig.ABLY_API_KEY.isNotBlank())
+                    "Talk with your squad while you play. The key is built in — leave the field blank to use it, or paste a different one to override."
+                else
+                    "Talk with your squad while you play. Needs a free Ably account first (one-time setup — see the README).",
                 style = MaterialTheme.typography.bodySmall
             )
             OutlinedTextField(
