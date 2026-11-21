@@ -11,6 +11,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
@@ -261,23 +262,31 @@ class StreamService : Service(), ConnectChecker {
         }
     }
 
-    /** Best-effort "LIVE" badge drawn over the stream. Never breaks streaming. */
+    /**
+     * Best-effort "LIVE" badge drawn over the stream. Never breaks streaming.
+     *
+     * Sized relative to the stream frame, not the phone screen: the old
+     * 20sp badge was drawn in phone pixels, so on a 720p stream it covered
+     * a third of the picture. Now it is a small rounded "● LIVE" pill,
+     * about 2% of the frame width, top-left.
+     */
     private fun applyLiveBadgeOverlay(cfg: StreamConfig) {
         try {
+            val textPx = cfg.width * 0.02f
+            val padH = (cfg.width * 0.012f).toInt()
+            val padV = (cfg.width * 0.006f).toInt()
+            val margin = (cfg.width * 0.015f).toInt()
             val badge = TextView(this).apply {
-                text = "● LIVE  SQUADSTREAM"
+                text = "● LIVE"
                 setTextColor(Color.WHITE)
-                textSize = 20f
+                setTextSize(TypedValue.COMPLEX_UNIT_PX, textPx)
                 setTypeface(Typeface.DEFAULT_BOLD)
-                setBackgroundColor(Color.parseColor("#C62828"))
-                val pad = TypedValue.applyDimension(
-                    TypedValue.COMPLEX_UNIT_DIP, 10f, resources.displayMetrics
-                ).toInt()
-                setPadding(pad, pad / 2, pad, pad / 2)
+                background = GradientDrawable().apply {
+                    setColor(Color.parseColor("#E6C62828"))
+                    cornerRadius = textPx
+                }
+                setPadding(padH, padV, padH, padV)
             }
-            val margin = TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP, 16f, resources.displayMetrics
-            ).toInt()
             val frame = FrameLayout(this).apply {
                 setBackgroundColor(Color.TRANSPARENT)
                 addView(
