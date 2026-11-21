@@ -1,10 +1,14 @@
-# SquadStream — Phase 1
+# SquadStream — Phase 2
 
 A lightweight, zero-cost Android live-streaming app (Kotlin + Jetpack Compose)
 for a 4-player mobile gaming squad. Inspired by Turnip.
 
 **Phase 1 does:** capture the screen + internal game audio + mic and push
 H.264 + AAC straight to YouTube over RTMP. No server, no paid service.
+
+**Phase 2 adds:** a floating HUD bubble over the game (start/stop, mic mute,
+mic/game mix sliders, live bitrate + elapsed time) — no need to leave the
+game to control the stream.
 
 ## How it works
 
@@ -43,6 +47,60 @@ Key facts (verified against the RootEncoder 2.8.2 docs + official screen example
   (`AndroidViewFilterRender`). If it ever fails, the stream continues
   without it — overlay code is wrapped so it can never break streaming.
 
+## Phase 2 — floating HUD
+
+`HudService` draws a draggable bubble over any app with
+`WindowManager.TYPE_APPLICATION_OVERLAY`. It needs the
+**"Display over other apps"** permission (`SYSTEM_ALERT_WINDOW`): turn it
+on in the app under *Floating controls*, which opens the system Settings
+page for SquadStream. The bubble is a foreground service of type
+`specialUse` (Android 14+ requires every foreground service to declare a
+type, and the bubble fits no other type); on older Android it runs as a
+plain foreground service. A low-priority "SquadStream controls"
+notification keeps it alive, with a Hide action.
+
+Tap the bubble to open the panel:
+
+- **● LIVE / Idle + elapsed time** and **live upload / encoder bitrate**.
+- **Mic mute** — swaps the audio source (`MixAudioSource` ↔
+  `InternalAudioSource`), so the game keeps playing for viewers while
+  your mic goes silent. `changeAudioSource` is safe while streaming.
+- **Mic / Game sliders** — 0–100 each. The library has no per-source
+  gain, so a slider at 0 switches its source off (Mix ↔ Mic-only ↔
+  Game-only ↔ silence). Mid-range positions don't change volume yet —
+  true per-channel gain (0–100 volume, not just on/off) arrives with the
+  Phase 4 mixer. The audio-mode radio in the app is a preset for the
+  same two gains.
+- **Squad mute** — shown disabled until Phase 3 (no squad voices yet).
+- **START / STOP** — Stop ends the stream from the bubble. Start opens
+  the app and begins the capture-consent flow at once (only works if a
+  stream key is already pasted; the key is never saved, so paste it in
+  the app first).
+
+The bubble remembers its position. Drag it anywhere; the panel opens
+below it (or above it if there is no room).
+
+## Phase 2 verification test
+
+1. **Enable.** In the app: *Floating controls* → "Allow display over
+   other apps" → turn SquadStream on in Settings → back in the app,
+   "Enable floating controls". The bubble appears.
+2. **Drag.** Drag the bubble to a corner. It stays there; reopen the app
+   later and it is back in the same spot.
+3. **Panel.** Tap the bubble: the panel opens with Idle status, Mic ON,
+   both sliders at 100, squad mute greyed out.
+4. **Start from the app** (paste the key, START STREAM). The bubble turns
+   red: `● LIVE`. The panel shows elapsed time and a live bitrate.
+5. **Mic mute.** Tap "Mic: ON" in the panel — viewers hear game audio
+   only. Tap again — your mic is back.
+6. **Mix.** Drag the Game slider to 0 — viewers hear mic only. Drag it
+   back to 100 — the mix returns. (Mid-range positions change nothing
+   yet; that's the Phase 4 note above, not a bug.)
+7. **Stop from the bubble.** Tap STOP in the panel. Stream ends, bubble
+   turns grey, status Idle.
+8. **Hide.** Notification → Hide, or "Disable floating controls" in the
+   app. Bubble and notification disappear.
+
 ## Android 14+ foreground-service rules (followed exactly)
 
 1. Consent first: `MediaProjectionManager.createScreenCaptureIntent()` is
@@ -62,7 +120,7 @@ squad-stream/
 ├── build.gradle.kts               # root plugins
 ├── gradle.properties
 ├── gradle/
-│   ├── libs.versions.toml         # AGP 8.7.3, Kotlin 2.0.21, Compose BOM, RootEncoder 2.8.2
+│   ├── libs.versions.toml         # AGP 8.7.3, Kotlin 2.2.0, Compose BOM, RootEncoder 2.8.2
 │   └── wrapper/gradle-wrapper.properties   # Gradle 8.11
 ├── .github/workflows/android.yml  # cloud build → debug APK (no PC needed)
 └── app/
@@ -71,10 +129,11 @@ squad-stream/
     └── src/main/
         ├── AndroidManifest.xml    # permissions + foreground service types
         └── java/com/koseiedits/squadstream/
-            ├── MainActivity.kt    # Compose UI: URL/key, quality, audio mode, start/stop
+            ├── MainActivity.kt    # Compose UI: URL/key, quality, audio mode, start/stop, HUD toggle
             ├── StreamService.kt   # foreground service: capture → encode → RTMP
+            ├── HudService.kt      # Phase 2: floating bubble + control panel
             ├── StreamConfig.kt    # quality presets + audio modes
-            └── StreamState.kt     # service → UI status flows
+            └── StreamState.kt     # service → UI status flows (incl. mix gains)
 ```
 
 ## Getting the APK (no PC needed)
@@ -134,6 +193,10 @@ running, with no crash and no overheating warning in 10 minutes of play.
 | Black screen in preview | Game not producing frames | `setForceRender(true, 15)` is already on; make sure the game is in the foreground |
 | No game audio | Audio mode wrong | Pick "Mic + game audio (mix)"; game must actually be playing sound |
 | No mic audio | Mic permission denied | Settings → Apps → SquadStream → Permissions → Microphone → Allow |
+| Bubble never appears | Overlay permission off | App → Floating controls → "Allow display over other apps" → turn SquadStream on |
+| Bubble disappears when idle | Android killed the HUD service | Reopen the app (it restarts the bubble if enabled); while streaming it stays alive |
+| Mic mute also kills game audio | — | Should not happen: mute swaps to game-only source. If it does, report it — that's a bug, not the design |
+| Sliders do nothing mid-range | By design until Phase 4 | Only 0 switches a source off; true volume gain needs the Phase 4 mixer |
 | Crash on Start (Android 14) | Foreground service type | Already handled: manifest declares `mediaProjection\|microphone` and the service passes both to `startForeground()` |
 | Badge missing, stream fine | Overlay failed | Cosmetic only — the overlay is best-effort by design; stream is unaffected |
 
@@ -142,16 +205,16 @@ running, with no crash and no overheating warning in 10 minutes of play.
 - **Rotation:** Phase 1 encodes landscape 1280×720, rotation 0. If you
   start the stream from a portrait screen, the image is scaled, not
   rotated. A rotation-aware mode comes with the Phase 2 HUD work.
-- **No squad voice yet:** Phase 1 is stream-only. Voice rooms arrive in
-  Phase 3; the 3-channel mixer (game + mic + squad) in Phase 4.
-- **No floating controls yet:** starting/stopping is from the app or the
-  notification. The in-game bubble is Phase 2.
+- **No squad voice yet:** Phases 1–2 are stream-only. Voice rooms arrive
+  in Phase 3; the 3-channel mixer (game + mic + squad) in Phase 4.
+- **Mix sliders are on/off, not volume:** Phase 2 swaps audio sources;
+  fine-grained per-channel gain needs the Phase 4 custom mixer.
 - **Upload is the bottleneck:** 720p30 at 4 Mbps needs a stable ~5 Mbps
   upload. If your mobile data is slow, drop to the adaptive floor or
   stream on Wi-Fi.
 
-## Next: Phase 2
+## Next: Phase 3
 
-Floating overlay HUD (`SYSTEM_ALERT_WINDOW` bubble): start/stop, mic mute,
-squad mute, volume mix sliders, live bitrate/FPS indicator — all without
-leaving the game.
+4-person WebRTC mesh voice room: 6-character room codes, Supabase
+Realtime (or Firebase RTDB) free-tier signaling + free public STUN. The
+HUD's squad-mute button and the Phase 4 mixer plug into it.
