@@ -7,7 +7,7 @@ import java.util.UUID
 /**
  * Phase 3 — voice-room signaling messages.
  *
- * One JSON message type rides the Supabase Broadcast channel (event
+ * One JSON message type rides the Ably Realtime channel (event
  * "signal"). `to == null` means "everyone in the room"; otherwise the
  * message is for one peer only (offers, answers and ICE are unicast).
  */
