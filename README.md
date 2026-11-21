@@ -12,7 +12,7 @@ game to control the stream.
 
 **Phase 3 adds:** a squad voice room — up to 4 players talking over WebRTC
 while they play, joined by a 6-character room code. No server of ours: the
-only backend is a free Supabase project used for signaling.
+only backend is a free Ably account used for signaling.
 
 ## How it works
 
@@ -113,11 +113,17 @@ of each other, the one with the lower peer id sends the offer; the other
 answers. Teammates hear ONLY your mic — never game audio, never their own
 voice back. Remote voices play through the phone speaker by default.
 
-Signaling is Supabase Realtime **Broadcast**: one channel per room code,
-one event (`signal`) carrying the join/hello/offer/answer/ICE/leave
-messages. No tables, no row-level security, no login — the project's anon
-key is all the auth there is. The URL + anon key are typed into the app
-once and kept in SharedPreferences, never in code or git.
+Signaling is Ably Realtime: one channel per room code, one event
+(`signal`) carrying the join/hello/offer/answer/ICE/leave messages as
+JSON strings. No tables, no database, no login — the API key is all the
+auth there is. The key is typed into the app once and kept in
+SharedPreferences, never in code or git.
+
+Ably replaced Supabase here: Supabase's free tier pauses the project
+after 7 days of inactivity, and its Kotlin client (supabase-kt) changed
+API in 3.9.0, which broke the first Phase 3 build. Ably's free tier has
+no inactivity pause: 6M messages/month, 200 concurrent connections,
+500 messages/second, no credit card, no time limit.
 
 WebRTC comes from the maintained `io.github.webrtc-sdk:android`
 fork (150.7871.01) — Google's `org.webrtc:google-webrtc` is dead (last
@@ -126,16 +132,16 @@ fork (150.7871.01) — Google's `org.webrtc:google-webrtc` is dead (last
 free public Google STUN (`stun.l.google.com:19302`); there is no TURN
 server yet.
 
-### Supabase setup (do this once, ~2 minutes)
+### Ably setup (do this once, ~2 minutes)
 
-1. Go to **supabase.com** → sign in (GitHub login works) → **New project**.
-   Pick any name, a database password (write it down, you won't need it
-   again), and the nearest region. Create it — it takes about a minute.
-2. In the project: **Project Settings → API**. Copy the **Project URL**
-   (`https://xyzcompany.supabase.co`) and the **anon `public` key**.
-3. In the SquadStream app, under *Squad voice*, paste the URL and the
-   anon key, and type your name. They are saved on your phone only.
-4. That's it — no tables, no SQL, no extra settings. Broadcast just works.
+1. Go to **ably.com** → sign up (email or GitHub; no card) → **Create
+   an app** (any name).
+2. In the app: **API Keys** → copy the key (it looks like
+   `xVLy...:xxx...`). It is the root key — it can do everything in
+   that app, so keep it inside the squad.
+3. In the SquadStream app, under *Squad voice*, paste the key and type
+   your name. It is saved on your phone only.
+4. That's it — no tables, no SQL, no extra settings.
 
 ### Room flow
 
@@ -152,10 +158,10 @@ server yet.
 
 ### Phase 3 verification test
 
-1. **Setup.** Do the Supabase steps above on one phone.
+1. **Setup.** Do the Ably steps above on one phone.
 2. **Create.** Tap Create room — a code appears, status "Waiting for
    squad mates…". A "Squad voice • Room CODE" notification appears.
-3. **Join (second phone).** Same Supabase URL + key, paste the code, Join
+3. **Join (second phone).** Same Ably API key, paste the code, Join
    — both phones list each other by name within a few seconds.
 4. **Talk.** Speak on phone A: phone B hears you through the speaker.
    Speak on phone B: phone A hears you. No game audio leaks into the
@@ -191,7 +197,7 @@ squad-stream/
 ├── gradle.properties
 ├── gradle/
 │   ├── libs.versions.toml         # AGP 8.7.3, Kotlin 2.2.0, Compose BOM, RootEncoder 2.8.2,
-│   │                              # webrtc-sdk 150.7871.01, supabase-bom 3.9.0, ktor 3.3.0
+│   │                              # webrtc-sdk 150.7871.01, ably-java 1.8.2
 │   └── wrapper/gradle-wrapper.properties   # Gradle 8.11
 ├── .github/workflows/android.yml  # cloud build → debug APK (no PC needed)
 └── app/
@@ -205,7 +211,7 @@ squad-stream/
             ├── HudService.kt      # Phase 2: floating bubble + control panel
             ├── VoiceService.kt    # Phase 3: foreground service hosting the voice room
             ├── VoiceRoomManager.kt # Phase 3: WebRTC mesh (offers, ICE, remote audio)
-            ├── SupabaseSignaling.kt # Phase 3: Realtime Broadcast signaling
+            ├── AblySignaling.kt   # Phase 3: Ably Realtime signaling
             ├── VoiceModels.kt     # Phase 3: signal messages + room codes
             ├── StreamConfig.kt    # quality presets + audio modes
             └── StreamState.kt     # service → UI status flows (incl. mix gains + voice)
@@ -272,7 +278,7 @@ running, with no crash and no overheating warning in 10 minutes of play.
 | Bubble disappears when idle | Android killed the HUD service | Reopen the app (it restarts the bubble if enabled); while streaming it stays alive |
 | Mic mute also kills game audio | — | Should not happen: mute swaps to game-only source. If it does, report it — that's a bug, not the design |
 | Sliders do nothing mid-range | By design until Phase 4 | Only 0 switches a source off; true volume gain needs the Phase 4 mixer |
-| Room never shows mates | Wrong URL/key, or no network | Re-copy the Project URL + anon key from Supabase → Project Settings → API; check mobile data |
+| Room never shows mates | Wrong API key, or no network | Re-copy the key from Ably dashboard → your app → API Keys; check mobile data |
 | Voice connects on Wi-Fi but not mobile data | Symmetric NAT / carrier NAT | Free STUN only — two players behind strict NATs may fail. A TURN server (Phase 4 hardening) fixes it |
 | Echo while streaming + voice together | Mic captured twice (stream + WebRTC) | Lower the speaker volume or use earphones; the echo cancelers usually cope, but two captures can fight on some phones |
 | Crash on Start (Android 14) | Foreground service type | Already handled: manifest declares `mediaProjection\|microphone` and the service passes both to `startForeground()` |
