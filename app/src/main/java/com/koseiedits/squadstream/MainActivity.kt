@@ -257,6 +257,7 @@ class MainActivity : ComponentActivity() {
                 style = MaterialTheme.typography.bodyMedium
             )
 
+            // Green dot while streaming, grey while idle — status at a glance.
             Text(
                 "● $status",
                 style = MaterialTheme.typography.bodyLarge,
