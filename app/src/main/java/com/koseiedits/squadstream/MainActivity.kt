@@ -67,10 +67,9 @@ class MainActivity : ComponentActivity() {
     private var hudEnabled by mutableStateOf(false)
     private var overlayGranted by mutableStateOf(false)
 
-    // Phase 3 — squad voice room settings. The Supabase URL + anon key live
-    // in SharedPreferences only — never in code, never in git.
-    private var supabaseUrl by mutableStateOf("")
-    private var supabaseKey by mutableStateOf("")
+    // Phase 3 — squad voice room settings. The Ably API key lives in
+    // SharedPreferences only — never in code, never in git.
+    private var ablyKey by mutableStateOf("")
     private var voiceName by mutableStateOf("")
     private var joinCode by mutableStateOf("")
     private var pendingVoiceCode: String? = null
@@ -114,8 +113,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         refreshHudState()
-        supabaseUrl = prefs.getString("supabase_url", "").orEmpty()
-        supabaseKey = prefs.getString("supabase_key", "").orEmpty()
+        ablyKey = prefs.getString("ably_key", "").orEmpty()
         voiceName = prefs.getString("voice_name", "").orEmpty()
         // If the bubble's START button opened us, restore the bubble if the
         // user had it on (the service may have been killed while gaming).
@@ -161,8 +159,7 @@ class MainActivity : ComponentActivity() {
 
     private fun saveVoicePrefs() {
         prefs.edit()
-            .putString("supabase_url", supabaseUrl.trim())
-            .putString("supabase_key", supabaseKey.trim())
+            .putString("ably_key", ablyKey.trim())
             .putString("voice_name", voiceName.trim())
             .apply()
     }
@@ -183,8 +180,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startVoiceJoin(code: String) {
-        if (supabaseUrl.isBlank() || supabaseKey.isBlank()) {
-            toast("Paste the Supabase URL + anon key first")
+        if (ablyKey.isBlank()) {
+            toast("Paste the Ably API key first")
             return
         }
         saveVoicePrefs()
@@ -202,8 +199,7 @@ class MainActivity : ComponentActivity() {
     private fun startVoiceService(code: String) {
         val intent = Intent(this, VoiceService::class.java).apply {
             action = VoiceService.ACTION_JOIN
-            putExtra(VoiceService.EXTRA_SUPABASE_URL, supabaseUrl.trim())
-            putExtra(VoiceService.EXTRA_SUPABASE_KEY, supabaseKey.trim())
+            putExtra(VoiceService.EXTRA_ABLY_KEY, ablyKey.trim())
             putExtra(VoiceService.EXTRA_ROOM_CODE, code)
             putExtra(VoiceService.EXTRA_NAME, voiceName.trim())
         }
@@ -389,20 +385,13 @@ class MainActivity : ComponentActivity() {
 
             Text("Squad voice (communication room)", style = MaterialTheme.typography.titleMedium)
             Text(
-                "Talk with your squad while you play. Needs a free Supabase project first (one-time setup — see the README).",
+                "Talk with your squad while you play. Needs a free Ably account first (one-time setup — see the README).",
                 style = MaterialTheme.typography.bodySmall
             )
             OutlinedTextField(
-                value = supabaseUrl,
-                onValueChange = { supabaseUrl = it; saveVoicePrefs() },
-                label = { Text("Supabase URL") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
-            )
-            OutlinedTextField(
-                value = supabaseKey,
-                onValueChange = { supabaseKey = it; saveVoicePrefs() },
-                label = { Text("Supabase anon key") },
+                value = ablyKey,
+                onValueChange = { ablyKey = it; saveVoicePrefs() },
+                label = { Text("Ably API key") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
