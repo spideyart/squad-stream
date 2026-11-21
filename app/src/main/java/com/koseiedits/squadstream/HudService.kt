@@ -339,10 +339,7 @@ class HudService : Service() {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
         }
         micButton = makeButton("Mic: ON") { onMicToggle() }
-        squadButton = makeButton("Squad mute — Phase 3") {}.apply {
-            isEnabled = false
-            alpha = 0.5f
-        }
+        squadButton = makeButton("Squad: ON") { onSquadToggle() }
         micSeek = makeSeekBar { gain -> sendGain(StreamService.ACTION_SET_MIC_GAIN, gain) }
         gameSeek = makeSeekBar { gain -> sendGain(StreamService.ACTION_SET_GAME_GAIN, gain) }
         startStopButton = makeButton("START STREAM") { onStartStop() }
@@ -470,6 +467,13 @@ class HudService : Service() {
         sendGain(StreamService.ACTION_SET_MIC_GAIN, gain)
     }
 
+    /** Squad mute = stop hearing the squad (my mic to them is untouched). */
+    private fun onSquadToggle() {
+        startService(Intent(this, StreamService::class.java).apply {
+            action = StreamService.ACTION_TOGGLE_SQUAD_MUTE
+        })
+    }
+
     private fun onStartStop() {
         if (StreamState.isStreaming.value) {
             startService(Intent(this, StreamService::class.java).apply {
@@ -537,7 +541,10 @@ class HudService : Service() {
             if (micOn) Color.parseColor("#444444") else Color.parseColor("#C62828"), dp(8)
         )
         squadButton?.text =
-            if (StreamState.squadMuted.value) "Squad: MUTED — Phase 3" else "Squad mute — Phase 3"
+            if (StreamState.squadMuted.value) "Squad: MUTED — tap to unmute" else "Squad: ON — tap to mute"
+        squadButton?.background = roundedBg(
+            if (StreamState.squadMuted.value) Color.parseColor("#C62828") else Color.parseColor("#444444"), dp(8)
+        )
         micSeek?.let { if (it.progress != StreamState.micGain.value) it.progress = StreamState.micGain.value }
         gameSeek?.let { if (it.progress != StreamState.gameGain.value) it.progress = StreamState.gameGain.value }
         startStopButton?.text = if (live) "STOP STREAM" else "START STREAM"
