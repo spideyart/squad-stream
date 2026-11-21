@@ -1,5 +1,6 @@
 package com.koseiedits.squadstream
 
+import android.animation.ValueAnimator
 import android.app.Activity
 import android.app.Notification
 import android.app.NotificationChannel
@@ -103,6 +104,7 @@ class StreamService : Service(), ConnectChecker {
     private var lastAdaptMs = 0L
     private var lowBitrateStreak = 0
     private var currentAudioKind = AudioKind.MIX
+    private var badgeAnimator: ValueAnimator? = null
 
     private val mediaProjectionManager by lazy {
         applicationContext.getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
@@ -263,21 +265,24 @@ class StreamService : Service(), ConnectChecker {
     }
 
     /**
-     * Best-effort "LIVE" badge drawn over the stream. Never breaks streaming.
+     * Small "● LIVE  SQUADSTREAM" watermark drawn over the stream, fading
+     * in and out on a slow loop. Never breaks streaming (any failure here
+     * just leaves the stream without the watermark).
      *
      * Sized relative to the stream frame, not the phone screen: the old
      * 20sp badge was drawn in phone pixels, so on a 720p stream it covered
-     * a third of the picture. Now it is a small rounded "● LIVE" pill,
-     * about 2% of the frame width, top-left.
+     * a third of the picture. The watermark text is ~1.6% of the frame
+     * width. The fade runs on a ValueAnimator (main thread); the GL filter
+     * re-renders the view every frame, so the fade shows on the stream.
      */
     private fun applyLiveBadgeOverlay(cfg: StreamConfig) {
         try {
-            val textPx = cfg.width * 0.02f
+            val textPx = cfg.width * 0.016f
             val padH = (cfg.width * 0.012f).toInt()
             val padV = (cfg.width * 0.006f).toInt()
             val margin = (cfg.width * 0.015f).toInt()
             val badge = TextView(this).apply {
-                text = "● LIVE"
+                text = "● LIVE  SQUADSTREAM"
                 setTextColor(Color.WHITE)
                 setTextSize(TypedValue.COMPLEX_UNIT_PX, textPx)
                 setTypeface(Typeface.DEFAULT_BOLD)
@@ -306,12 +311,24 @@ class StreamService : Service(), ConnectChecker {
             frame.layout(0, 0, cfg.width, cfg.height)
             val filter = AndroidViewFilterRender().apply { view = frame }
             genericStream.getGlInterface().setFilter(filter)
+            // Gentle fade in/out loop: nearly gone, then fully there, 2.5s
+            // each way. Stopped in handleStop()/onDestroy().
+            badgeAnimator?.cancel()
+            badgeAnimator = ValueAnimator.ofFloat(0.15f, 1f).apply {
+                duration = 2500
+                repeatMode = ValueAnimator.REVERSE
+                repeatCount = ValueAnimator.INFINITE
+                addUpdateListener { badge.alpha = it.animatedValue as Float }
+                start()
+            }
         } catch (e: Exception) {
             Log.w(TAG, "Overlay failed (stream continues without badge)", e)
         }
     }
 
     private fun handleStop() {
+        badgeAnimator?.cancel()
+        badgeAnimator = null
         try {
             if (::genericStream.isInitialized && genericStream.isStreaming) {
                 genericStream.stopStream()
@@ -342,6 +359,8 @@ class StreamService : Service(), ConnectChecker {
 
     override fun onDestroy() {
         super.onDestroy()
+        badgeAnimator?.cancel()
+        badgeAnimator = null
         if (::genericStream.isInitialized && genericStream.isStreaming) {
             try {
                 genericStream.stopStream()
