@@ -1,12 +1,15 @@
 package com.koseiedits.squadstream
 
+import android.content.Context
 import android.util.Log
-import io.ably.lib.realtime.AblyRealtime
-import io.ably.lib.realtime.Channel
-import io.ably.lib.realtime.CompletionListener
-import io.ably.lib.types.AblyException
-import io.ably.lib.types.ErrorInfo
-import io.ably.lib.types.Message
+import io.ably.pubsub.device.PubSubDevice
+import io.ably.pubsub.realtime.Channel
+import io.ably.pubsub.realtime.CompletionListener
+import io.ably.pubsub.realtime.PubSubRealtimeClient
+import io.ably.pubsub.types.AblyException
+import io.ably.pubsub.types.ClientOptions
+import io.ably.pubsub.types.ErrorInfo
+import io.ably.pubsub.types.Message
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -20,7 +23,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 /**
- * Phase 3 (Ably) — voice-room signaling over Ably Realtime.
+ * Phase 3 (Ably) — voice-room signaling over Ably Pub/Sub.
  *
  * Replaces the Supabase version: Supabase's free tier pauses the project
  * after 7 days of inactivity, and its Kotlin client changed API in 3.9.0.
@@ -29,21 +32,34 @@ import kotlinx.serialization.json.Json
  * database, no pause. The API key is the only auth; it is typed into the
  * app once and kept in SharedPreferences, never in code or git.
  *
- * Free tier (verified Nov 2026): 6M messages/month, 200 concurrent
- * connections, 500 messages/second, no credit card, no time limit.
- * A 4-player room uses ~4 connections and a few dozen messages per join.
+ * SDK NOTE (Nov 2026) — Ably moved new accounts to MAU pricing, and the
+ * old `io.ably:ably-java` 1.8.2 SDK is REJECTED on those accounts. The
+ * phone proved it: "This version of the Ably SDK is not compatible with
+ * your account, which uses MAU pricing. Use io.ably.pubsub:device 2.0.0+
+ * on end-user devices or io.ably.pubsub:server 2.0.0+ on servers,
+ * instead of ably-java or ably-android." So this class uses the new
+ * `io.ably.pubsub:device:2.0.0` device SDK. MAU pricing also REQUIRES a
+ * clientId on every end-user connection — a connection with none is
+ * rejected too. The clientId is a stable per-device id (generated once,
+ * stored in prefs — see VoiceRoomManager.stableAblyClientId), so one
+ * phone counts as one MAU. The free package covers 500 MAUs/month; a
+ * 4-player squad uses 4.
+ *
+ * API verified against Ably's own docs and the ably-pubsub-java
+ * UPGRADING.md (package rename from io.ably.lib.* is mechanical):
+ * `PubSubDevice.clientBuilder(options).build()`, `setAndroidContext`,
+ * `channels.get(name)`, `subscribe(event, listener)`,
+ * `publish(event, string)`, `attach(CompletionListener)`.
  *
  * Ably is fire-and-forget, same as Supabase Broadcast was — a lost
  * message means a failed connection, not a retry — which is fine for a
  * 4-person squad room and is called out in the README.
- *
- * API verified against the ably-java 1.8.2 sources (not the docs pages):
- * `AblyRealtime(key)`, `channels.get(name)`, `subscribe(event, listener)`,
- * `publish(event, string)`, `attach(CompletionListener)`.
  */
 class AblySignaling(
     private val apiKey: String,
     private val roomCode: String,
+    private val clientId: String,
+    private val context: Context,
 ) {
     companion object {
         private const val TAG = "AblySignaling"
@@ -55,7 +71,7 @@ class AblySignaling(
     private val _incoming = MutableSharedFlow<SignalMessage>(extraBufferCapacity = 64)
     val incoming: Flow<SignalMessage> = _incoming.asSharedFlow()
 
-    private var ably: AblyRealtime? = null
+    private var ably: PubSubRealtimeClient? = null
     private var channel: Channel? = null
     private var started = false
 
@@ -82,7 +98,12 @@ class AblySignaling(
         started = true
         scope.launch {
             try {
-                val client = AblyRealtime(apiKey)
+                val options = ClientOptions().apply {
+                    key = apiKey
+                    clientId = clientId
+                }
+                val client = PubSubDevice.clientBuilder(options).build()
+                client.setAndroidContext(context.applicationContext)
                 ably = client
                 val ch = client.channels.get("squadstream-room-$roomCode")
                 channel = ch
