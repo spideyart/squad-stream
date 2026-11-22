@@ -39,6 +39,7 @@ object SignalTypes {
     const val ICE = "ice"
     const val LEAVE = "leave"
     const val MIC = "mic" // mic-mute state broadcast (muted = true/false)
+    const val FULL = "full" // room is full (4 players) — newcomer must leave
 }
 
 /** 6-character room codes. Alphabet skips look-alikes (0/O, 1/I/L). */
