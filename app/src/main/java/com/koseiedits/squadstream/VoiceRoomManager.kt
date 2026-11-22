@@ -49,9 +49,12 @@ import java.util.concurrent.ConcurrentHashMap
  * Honest limits (also in the README): the mic is captured twice while
  * streaming (RootEncoder's MixAudioSource + WebRTC) — works on most
  * phones, watch for echo on the test. Signaling is fire-and-forget, so a
- * lost offer means that peer never connects until someone rejoins. Only
- * free public STUN — two players behind symmetric NATs may fail to
- * connect (no TURN yet).
+ * lost offer means that peer never connects until someone rejoins. ICE
+ * uses free public STUN plus Metered's free OpenRelay TURN — both
+ * phones are on mobile data behind carrier NAT, and STUN alone could
+ * not punch through it (names showed, no audio, ICE kept failing and
+ * the peer kept "leaving"). The relay is a shared public service, so
+ * if it is ever down or rate-limited the room goes silent again.
  */
 class VoiceRoomManager(private val appContext: Context) {
 
@@ -402,6 +405,24 @@ class VoiceRoomManager(private val appContext: Context) {
                     .createIceServer(),
                 PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302")
                     .createIceServer(),
+                // Free public TURN (Metered OpenRelay). Both phones are
+                // on mobile data behind carrier NAT — STUN alone cannot
+                // punch through symmetric NAT, so without a relay the
+                // peer connection never forms: names show, no audio, and
+                // ICE keeps failing until the peer is dropped. The relay
+                // only carries the voice packets; it never sees the key.
+                PeerConnection.IceServer.builder("turn:openrelay.metered.ca:80")
+                    .setUsername("openrelayproject")
+                    .setPassword("openrelayproject")
+                    .createIceServer(),
+                PeerConnection.IceServer.builder("turn:openrelay.metered.ca:443")
+                    .setUsername("openrelayproject")
+                    .setPassword("openrelayproject")
+                    .createIceServer(),
+                PeerConnection.IceServer.builder("turn:openrelay.metered.ca:443?transport=tcp")
+                    .setUsername("openrelayproject")
+                    .setPassword("openrelayproject")
+                    .createIceServer(),
             )
         ).apply {
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
@@ -438,14 +459,18 @@ class VoiceRoomManager(private val appContext: Context) {
     }
 
     private fun removePeer(peerId: String) {
+        val pc = peers.remove(peerId)
+        val hadName = peerNames.remove(peerId) != null
         try {
-            peers.remove(peerId)?.close()
+            pc?.close()
         } catch (_: Exception) {
         }
         remoteTracks.remove(peerId)
-        peerNames.remove(peerId)
         StreamState.removeVoiceLevel(peerId)
         StreamState.removePeerMuted(peerId)
+        // ICE fires FAILED and then CLOSED for the same dead peer — the
+        // second call finds nothing left, so don't log "left" twice.
+        if (pc == null && !hadName) return
         updatePeersFlow()
         StreamState.addLog("Squad mate left")
     }
