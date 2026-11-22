@@ -13,12 +13,15 @@ import java.util.UUID
  */
 @Serializable
 data class SignalMessage(
-    val type: String, // join | hello | offer | answer | ice | leave
+    val type: String, // join | hello | offer | answer | ice | leave | mic
     val from: String, // sender peer id
     val to: String? = null,
     val name: String? = null, // display name (join / hello)
     val sdp: String? = null, // offer / answer SDP
     val candidate: IcePayload? = null, // ICE candidate
+    // Mic-mute state (join / hello / mic). Peers show the muted icon
+    // from this — a peer's mic state is otherwise invisible to the room.
+    val muted: Boolean = false,
 )
 
 @Serializable
@@ -35,6 +38,7 @@ object SignalTypes {
     const val ANSWER = "answer"
     const val ICE = "ice"
     const val LEAVE = "leave"
+    const val MIC = "mic" // mic-mute state broadcast (muted = true/false)
 }
 
 /** 6-character room codes. Alphabet skips look-alikes (0/O, 1/I/L). */
