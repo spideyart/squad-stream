@@ -347,6 +347,11 @@ running, with no crash and no overheating warning in 10 minutes of play.
   saved key**; (3) the other phone runs an older APK without the new
   SDK — everyone must install the SAME latest APK; (4) the two phones
   typed different room codes — compare them letter by letter.
+- **"requires an identified client" (40161) meant the clientId never
+  left the phone.** In 1.0-ably-v2 the code wrote `clientId = clientId`
+  inside a Kotlin `apply` block, where the bare name resolves to the
+  options object's own (null) field — a self-assignment. Fixed in
+  1.0-ably-v2.1 by qualifying it (`this@AblySignaling.clientId`).
 - **Mic starts with the call, not with the room.** WebRTC captures the
   mic once a PeerConnection exists. If no one is in the room, the mic
   is idle by design — no mic indicator yet is normal, not a bug.
