@@ -137,9 +137,16 @@ The paste-in field in the app remains as an override.
 
 Ably replaced Supabase here: Supabase's free tier pauses the project
 after 7 days of inactivity, and its Kotlin client (supabase-kt) changed
-API in 3.9.0, which broke the first Phase 3 build. Ably's free tier has
-no inactivity pause: 6M messages/month, 200 concurrent connections,
-500 messages/second, no credit card, no time limit.
+API in 3.9.0, which broke the first Phase 3 build. Ably's old
+`io.ably:ably-java` 1.8.2 SDK then broke the second one: in Nov 2026
+Ably moved new accounts to MAU pricing, and the old SDK is rejected on
+those accounts ("This version of the Ably SDK is not compatible with
+your account, which uses MAU pricing"). The app now uses the new
+`io.ably.pubsub:device:2.0.0` device SDK. MAU pricing also requires a
+`clientId` on every end-user connection — the app generates one stable
+id per phone (stored in prefs), so one phone counts as one MAU. The
+free package covers 500 MAUs/month; a 4-player squad uses 4. No
+inactivity pause, no card, no time limit.
 
 WebRTC comes from the maintained `io.github.webrtc-sdk:android`
 fork (150.7871.01) — Google's `org.webrtc:google-webrtc` is dead (last
@@ -233,7 +240,7 @@ squad-stream/
 ├── gradle.properties
 ├── gradle/
 │   ├── libs.versions.toml         # AGP 8.7.3, Kotlin 2.2.0, Compose BOM, RootEncoder 2.8.2,
-│   │                              # webrtc-sdk 150.7871.01, ably-java 1.8.2
+│   │                              # webrtc-sdk 150.7871.01, ably-pubsub device 2.0.0
 │   └── wrapper/gradle-wrapper.properties   # Gradle 8.11
 ├── .github/workflows/android.yml  # cloud build → debug APK (no PC needed)
 └── app/
@@ -314,7 +321,7 @@ running, with no crash and no overheating warning in 10 minutes of play.
 | Bubble disappears when idle | Android killed the HUD service | Reopen the app (it restarts the bubble if enabled); while streaming it stays alive |
 | Mic mute also kills game audio | — | Should not happen: mute swaps to game-only source. If it does, report it — that's a bug, not the design |
 | Sliders do nothing mid-range | By design until Phase 4 | Only 0 switches a source off; true volume gain needs the Phase 4 mixer |
-| Room never shows mates | Wrong API key, or no network | Re-copy the key from Ably dashboard → your app → API Keys; check mobile data |
+| Room never shows mates | Wrong API key, or no network — the old "SDK not compatible" error is fixed in this build (device SDK 2.0.0) | Re-copy the key from Ably dashboard → your app → API Keys; check mobile data |
 | Voice connects on Wi-Fi but not mobile data | Symmetric NAT / carrier NAT | Free STUN only — two players behind strict NATs may fail. A TURN server (Phase 4 hardening) fixes it |
 | Echo while streaming + voice together | Mic captured twice (stream + WebRTC) | Lower the speaker volume or use earphones; the echo cancelers usually cope, but two captures can fight on some phones |
 | Crash on Start (Android 14) | Foreground service type | Already handled: manifest declares `mediaProjection\|microphone` and the service passes both to `startForeground()` |
@@ -326,14 +333,16 @@ running, with no crash and no overheating warning in 10 minutes of play.
   only exists if Ably connects. The app now fails loudly instead of
   sitting in a dead room: if attach fails (wrong/expired key, or no
   network) it leaves the room and logs "Voice room couldn't connect".
-  The usual causes, in order: (1) the GitHub secret `ABLY_API_KEY`
-  still holds the OLD key after a rotation — update the secret, then a
-  new build bakes the new key in (updating the secret alone changes
-  nothing until the next build); (2) a phone has the old key typed in
-  the paste field — it beats the built-in key, tap **Clear saved key**;
-  (3) the other phone runs an older APK without the baked-in key —
-  everyone must install the SAME latest APK; (4) the two phones typed
-  different room codes — compare them letter by letter.
+  The Nov 2026 cause — the old ably-java 1.8.2 SDK rejected on MAU
+  accounts — is fixed in this build (device SDK 2.0.0 + stable
+  clientId per phone). The remaining causes, in order: (1) the GitHub
+  secret `ABLY_API_KEY` still holds the OLD key after a rotation — update
+  the secret, then a new build bakes the new key in (updating the secret
+  alone changes nothing until the next build); (2) a phone has the old
+  key typed in the paste field — it beats the built-in key, tap **Clear
+  saved key**; (3) the other phone runs an older APK without the new
+  SDK — everyone must install the SAME latest APK; (4) the two phones
+  typed different room codes — compare them letter by letter.
 - **Mic starts with the call, not with the room.** WebRTC captures the
   mic once a PeerConnection exists. If no one is in the room, the mic
   is idle by design — no mic indicator yet is normal, not a bug.
