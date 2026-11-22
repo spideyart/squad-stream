@@ -228,7 +228,7 @@ class HudService : Service() {
         }
         bubbleText = text
         val pill = FrameLayout(this).apply {
-            background = roundedBg(Color.parseColor("#333333"), dp(26))
+            background = roundedBg(Color.parseColor("#1E1F22"), dp(26))
             minimumHeight = dp(BUBBLE_MIN_HEIGHT_DP)
             addView(text)
         }
@@ -293,7 +293,7 @@ class HudService : Service() {
         val live = StreamState.isStreaming.value
         bubbleText?.text = if (live) "● LIVE" else "SquadStream"
         bubble?.background = roundedBg(
-            if (live) Color.parseColor("#C62828") else Color.parseColor("#333333"),
+            if (live) Color.parseColor("#DA373C") else Color.parseColor("#1E1F22"),
             dp(26)
         )
     }
@@ -323,7 +323,7 @@ class HudService : Service() {
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(12), dp(14), dp(12))
-            background = roundedBg(Color.parseColor("#E6111111"), dp(14))
+            background = roundedBg(Color.parseColor("#E61E1F22"), dp(14))
         }
         statusText = TextView(this).apply {
             setTextColor(Color.WHITE)
@@ -331,11 +331,11 @@ class HudService : Service() {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
         }
         elapsedText = TextView(this).apply {
-            setTextColor(Color.parseColor("#BBBBBB"))
+            setTextColor(Color.parseColor("#B5BAC1"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
         }
         bitrateText = TextView(this).apply {
-            setTextColor(Color.parseColor("#BBBBBB"))
+            setTextColor(Color.parseColor("#B5BAC1"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
         }
         micButton = makeButton("Mic: ON") { onMicToggle() }
@@ -407,7 +407,7 @@ class HudService : Service() {
             this.text = text
             setTextColor(Color.WHITE)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-            background = roundedBg(Color.parseColor("#444444"), dp(8))
+            background = roundedBg(Color.parseColor("#2B2D31"), dp(8))
             setOnClickListener { onClick() }
             val lp = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
@@ -420,7 +420,7 @@ class HudService : Service() {
     private fun label(text: String): TextView {
         return TextView(this).apply {
             this.text = text
-            setTextColor(Color.parseColor("#BBBBBB"))
+            setTextColor(Color.parseColor("#B5BAC1"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
             val lp = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
@@ -432,7 +432,7 @@ class HudService : Service() {
 
     private fun divider(): View {
         return View(this).apply {
-            setBackgroundColor(Color.parseColor("#444444"))
+            setBackgroundColor(Color.parseColor("#2B2D31"))
             val lp = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(1)
             )
@@ -538,18 +538,18 @@ class HudService : Service() {
         val micOn = StreamState.micGain.value > 0
         micButton?.text = if (micOn) "Mic: ON — tap to mute" else "Mic: MUTED — tap to unmute"
         micButton?.background = roundedBg(
-            if (micOn) Color.parseColor("#444444") else Color.parseColor("#C62828"), dp(8)
+            if (micOn) Color.parseColor("#2B2D31") else Color.parseColor("#DA373C"), dp(8)
         )
         squadButton?.text =
             if (StreamState.squadMuted.value) "Squad: MUTED — tap to unmute" else "Squad: ON — tap to mute"
         squadButton?.background = roundedBg(
-            if (StreamState.squadMuted.value) Color.parseColor("#C62828") else Color.parseColor("#444444"), dp(8)
+            if (StreamState.squadMuted.value) Color.parseColor("#DA373C") else Color.parseColor("#2B2D31"), dp(8)
         )
         micSeek?.let { if (it.progress != StreamState.micGain.value) it.progress = StreamState.micGain.value }
         gameSeek?.let { if (it.progress != StreamState.gameGain.value) it.progress = StreamState.gameGain.value }
         startStopButton?.text = if (live) "STOP STREAM" else "START STREAM"
         startStopButton?.background = roundedBg(
-            if (live) Color.parseColor("#C62828") else Color.parseColor("#2E7D32"), dp(8)
+            if (live) Color.parseColor("#DA373C") else Color.parseColor("#23A55A"), dp(8)
         )
     }
 
