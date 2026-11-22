@@ -32,6 +32,7 @@ androidx-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
 androidx-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
 androidx-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
 androidx-material3 = { group = "androidx.compose.material3", name = "material3" }
+androidx-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
 # RootEncoder (RTMP screen streaming) via JitPack — newest release 2.8.2 (2026-11-11)
 rootencoder-library = { group = "com.github.pedroSG94.RootEncoder", name = "library", version.ref = "rootencoder" }
 # Phase 3 — WebRTC voice room (maintained webrtc-sdk fork, org.webrtc.* API)
