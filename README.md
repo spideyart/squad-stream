@@ -117,11 +117,16 @@ of each other, the one with the lower peer id sends the offer; the other
 answers. Teammates hear ONLY your mic — never game audio, never their own
 voice back. Remote voices play through the phone speaker by default.
 
-Discord-style speaking view: the room lists everyone by name with a live
-mic level (WebRTC `getStats` `audioLevel`, polled ~3x/sec). The row of the
-person talking gets a green ring, a green dot and a level bar. Your own
-row ("You") shows your mic level too. The name is set with the **Save
-name** button under the name field — it confirms with a toast.
+Discord-style speaking view: the room is a Discord voice stage — a
+participant grid (1 large card, 2 stacked, 3–4 in a 2x2 grid) with a
+live mic level (WebRTC `getStats` `audioLevel`, polled ~7x/sec). The
+card of the person talking gets a green ring + a level bar; a muted
+mic shows a red mic-off icon (mute state is signaled to the room).
+Your own card shows your mic level too, with a LIVE badge while
+streaming. The name is set from the profile pill in the top bar (tap
+it to edit — it auto-saves). The bottom dock has mic, speaker,
+Go Live (centre), mixer and leave. Minimising the room (chevron) drops
+back to the lobby with an "In room" chip — the call keeps running.
 
 Signaling is Ably Realtime: one channel per room code, one event
 (`signal`) carrying the join/hello/offer/answer/ICE/leave messages as
@@ -187,19 +192,21 @@ one (clear the paste-in field on any phone that had the old key typed in).
 
 1. **Setup.** Do the Ably steps above once — the key is baked into the
    build, so the squad installs the APK and never types a key.
-2. **Create.** Tap Create room — a code appears, status "Waiting for
-   squad mates…". A "Squad voice • Room CODE" notification appears.
-3. **Join (second phone).** Install the same APK, type your name, paste
-   the code, Join — both phones list each other by name within a few seconds.
+2. **Create.** Set your name (tap the profile pill, top right), tap
+   Create room — the voice stage opens. A "Squad voice • Room CODE"
+   notification appears.
+3. **Join (second phone).** Install the same APK, set your name, paste
+   the code, Join — both phones show each other as cards within a few seconds.
 4. **Talk.** Speak on phone A: phone B hears you through the speaker —
-   and A's row on B's screen lights up green with a moving level bar.
+   and A's card on B's screen gets a green ring with a moving level bar.
    Speak on phone B: phone A hears you. No game audio leaks into the
    room (start a stream too and check the YouTube preview still has
    game + mic, not squad voices).
-5. **Mute.** Mute my mic on A — B hears nothing from A. Unmute — voice
-   is back. HUD Squad button on A — A stops hearing B, B still hears A.
-6. **Leave + rejoin.** Leave on B — A sees B disappear. B joins again
-   with the same code — the voice link comes back.
+5. **Mute.** Mute my mic on A — B hears nothing from A and A's card on
+   B shows the red mic-off icon. Unmute — voice is back. HUD Squad
+   button on A — A stops hearing B, B still hears A.
+6. **Leave + rejoin.** Leave on B — A sees B's card disappear. B joins
+   again with the same code — the voice link comes back.
 7. **Stream + voice together.** Stream from A while in the room with B.
    Both keep working; watch for echo on A's mic (see limits).
 
@@ -339,6 +346,32 @@ running, with no crash and no overheating warning in 10 minutes of play.
 - **No squad voice in the stream yet:** the voice room is separate —
   teammates hear each other, viewers hear game + your mic. Mixing squad
   voices into the stream is Phase 4.
+## UI — Discord-style lobby + voice stage
+
+The main screen is a dark Discord layout (`#0B0C0E` background, `#1E1F22`
+dock, `#2B2D31` cards, Blurple `#5865F2` accent, green `#23A55A`
+speaking ring, red `#DA373C` live/muted). Edge-to-edge with dark system
+bars; the header never sits under the clock.
+
+- **Lobby:** profile pill (tap to edit your name — auto-saves), Create
+  Squad Room card, Join Room card, Go Live Solo card, status chips
+  (key / quality / bubble), Recent activity log at the bottom.
+- **Voice stage:** room-code pill (tap to copy), speaker output, invite
+  share, live telemetry pill (LIVE + timer + quality + bitrate + quick
+  Stop), participant grid, invite banner under 4 players, bottom dock
+  (mic / speaker / Go Live / mixer / leave).
+- **Settings sheet (gear):** RTMP URL, masked stream key (+ eye),
+  quality chips, floating-bubble switch (asks for the overlay
+  permission), Ably key under collapsed Advanced Settings.
+- **Mixer sheet:** Game + My Mic sliders (real — they drive the live
+  mix) and Squad mute. Squad *volume* is Phase 4, not a fake slider.
+
+- **Squad volume is not a slider yet:** WebRTC has no per-track volume
+  API — the mixer sheet has Game + Mic sliders (real) and Squad mute
+  (real). True squad volume needs the Phase 4 custom mixer.
+- **No Shield/BRB mode yet:** swapping the live screen for a static
+  "BRB" frame mid-stream is unverified in RootEncoder — no toggle ships
+  until it is proven on a real stream.
 - **Mix sliders are on/off, not volume:** Phase 2 swaps audio sources;
   fine-grained per-channel gain needs the Phase 4 custom mixer.
 - **Bigger APK:** WebRTC ships native code — the debug APK grows from
