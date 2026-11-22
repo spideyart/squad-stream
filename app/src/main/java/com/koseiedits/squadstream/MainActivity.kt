@@ -2,8 +2,6 @@ package com.koseiedits.squadstream
 
 import android.Manifest
 import android.app.Activity
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -21,16 +19,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -38,17 +30,23 @@ import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.koseiedits.squadstream.ui.screens.LobbyScreen
-import com.koseiedits.squadstream.ui.screens.VoiceRoomScreen
 import com.koseiedits.squadstream.ui.sheets.AudioMixerSheet
 import com.koseiedits.squadstream.ui.sheets.StreamSettingsSheet
 import com.koseiedits.squadstream.ui.theme.DiscordBackground
 import com.koseiedits.squadstream.ui.theme.SquadStreamTheme
 
 /**
- * Main screen — Discord-style lobby + voice room (see the UI checklist).
+ * Main screen — streaming-only lobby.
+ *
+ * The squad voice room was removed on 2026-11-22: voice over mobile data
+ * needs a server-side relay, and every free public relay we tried was
+ * dead or unverified (OpenRelay's public login, its shared-secret scheme).
+ * The code is still in git history if voice ever comes back via a real
+ * service (Agora). What remains is the part that works: screen + game
+ * audio + mic streamed to YouTube over RTMP.
  *
  * All the logic lives here (permissions, capture consent, service intents,
- * voice join, HUD toggle); the look lives in ui/screens + ui/sheets.
+ * HUD toggle); the look lives in ui/screens + ui/sheets.
  * The audio-mode radios are gone: the mix is now the Game / Mic gains
  * (mixer sheet + HUD sliders) and the mode is derived from them at
  * stream start.
@@ -76,36 +74,15 @@ class MainActivity : ComponentActivity() {
     private var hudEnabled by mutableStateOf(false)
     private var overlayGranted by mutableStateOf(false)
 
-    // Phase 3 — squad voice room settings. The Ably API key lives in
-    // SharedPreferences only — never in code, never in git.
-    private var ablyKey by mutableStateOf("")
-    private var voiceName by mutableStateOf("")
-    private var joinCode by mutableStateOf("")
-    private var pendingVoiceCode: String? = null
-
-    // UI state (Discord layout): which sheet is open, and whether the
-    // voice room is minimised to the lobby.
+    // UI state: which sheet is open.
     private var showSettingsSheet by mutableStateOf(false)
     private var showMixerSheet by mutableStateOf(false)
-    private var showNameDialog by mutableStateOf(false)
-    private var roomMinimized by mutableStateOf(false)
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { granted ->
         if (granted.values.all { it }) launchCaptureConsent()
         else toast("Mic + notification permission needed to stream")
-    }
-
-    private val voicePermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) {
-            pendingVoiceCode?.let { startVoiceService(it) }
-            pendingVoiceCode = null
-        } else {
-            toast("Mic permission needed for the voice room")
-        }
     }
 
     private val captureLauncher = registerForActivityResult(
@@ -135,8 +112,6 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
         )
         refreshHudState()
-        ablyKey = prefs.getString("ably_key", "").orEmpty()
-        voiceName = prefs.getString("voice_name", "").orEmpty()
         // If the bubble's START button opened us, restore the bubble if the
         // user had it on (the service may have been killed while gaming).
         if (hudEnabled && overlayGranted) startHudService()
@@ -178,89 +153,10 @@ class MainActivity : ComponentActivity() {
         overlayGranted = Settings.canDrawOverlays(this)
     }
 
-    // ---- Phase 3: squad voice room ----
-
-    // The key the app actually uses: whatever was pasted in the field,
-    // otherwise the key baked in at build time (GitHub secret ABLY_API_KEY).
-    // The paste field is an override — leave it blank to use the built-in key.
-    private fun effectiveAblyKey(): String =
-        ablyKey.trim().ifBlank { BuildConfig.ABLY_API_KEY }
-
-    private fun saveVoicePrefs() {
-        prefs.edit()
-            .putString("ably_key", ablyKey.trim())
-            .putString("voice_name", voiceName.trim())
-            .apply()
-    }
-
-    private fun onCreateRoomTapped() {
-        if (voiceName.isBlank()) {
-            showNameDialog = true
-            toast("Type your name first")
-            return
-        }
-        val code = RoomCodes.generate()
-        joinCode = code
-        startVoiceJoin(code)
-    }
-
-    private fun onJoinRoomTapped() {
-        if (voiceName.isBlank()) {
-            showNameDialog = true
-            toast("Type your name first")
-            return
-        }
-        val code = joinCode.trim().uppercase()
-        if (!RoomCodes.isValid(code)) {
-            toast("Room code is 6 characters, A–Z and 2–9")
-            return
-        }
-        startVoiceJoin(code)
-    }
-
-    private fun startVoiceJoin(code: String) {
-        if (effectiveAblyKey().isBlank()) {
-            toast("Paste the Ably API key first")
-            return
-        }
-        saveVoicePrefs()
-        if (ContextCompat.checkSelfPermission(
-                this, Manifest.permission.RECORD_AUDIO
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            pendingVoiceCode = code
-            voicePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-            return
-        }
-        startVoiceService(code)
-    }
-
-    private fun startVoiceService(code: String) {
-        val intent = Intent(this, VoiceService::class.java).apply {
-            action = VoiceService.ACTION_JOIN
-            putExtra(VoiceService.EXTRA_ABLY_KEY, effectiveAblyKey())
-            putExtra(VoiceService.EXTRA_ROOM_CODE, code)
-            putExtra(VoiceService.EXTRA_NAME, voiceName.trim())
-        }
-        ContextCompat.startForegroundService(this, intent)
-    }
-
-    private fun sendVoiceAction(action: String) {
-        startService(Intent(this, VoiceService::class.java).apply {
-            this.action = action
-        })
-    }
-
     private fun sendStreamGain(action: String, gain: Int) {
         startService(Intent(this, StreamService::class.java).apply {
             this.action = action
             putExtra(StreamService.EXTRA_GAIN, gain)
-        })
-    }
-
-    private fun sendSquadMuteToggle() {
-        startService(Intent(this, StreamService::class.java).apply {
-            action = StreamService.ACTION_TOGGLE_SQUAD_MUTE
         })
     }
 
@@ -298,7 +194,7 @@ class MainActivity : ComponentActivity() {
         else -> AudioMode.MIC_ONLY
     }
 
-    /** Go Live (dock / lobby): needs a stream key, else open Settings. */
+    /** Go Live: needs a stream key, else open Settings. Stops if already live. */
     private fun onGoLiveTapped() {
         if (StreamState.isStreaming.value) {
             onStopTapped()
@@ -312,43 +208,9 @@ class MainActivity : ComponentActivity() {
         onStartTapped()
     }
 
-    /** Leave: leave the room if in one, else stop the solo stream. */
-    private fun onLeaveTapped() {
-        if (StreamState.voiceConnected.value) {
-            sendVoiceAction(VoiceService.ACTION_LEAVE)
-        } else if (StreamState.isStreaming.value) {
-            onStopTapped()
-        }
-        roomMinimized = false
-    }
-
-    private fun copyRoomCode() {
-        val code = StreamState.voiceRoomCode.value
-        if (code.isBlank()) return
-        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-        clipboard.setPrimaryClip(ClipData.newPlainText("SquadStream room", code))
-        toast("Room code copied: $code")
-    }
-
-    private fun shareRoomCode() {
-        val code = StreamState.voiceRoomCode.value
-        if (code.isBlank()) return
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            putExtra(Intent.EXTRA_TEXT, "Join my SquadStream room: $code")
-        }
-        startActivity(Intent.createChooser(intent, "Invite squad"))
-    }
-
     @Composable
     private fun SquadStreamScreen() {
         val isStreaming by StreamState.isStreaming.collectAsStateWithLifecycle()
-        val voiceConnected by StreamState.voiceConnected.collectAsStateWithLifecycle()
-
-        // Joining opens the room; leaving/stopping clears the minimise flag.
-        LaunchedEffect(voiceConnected) {
-            if (voiceConnected) roomMinimized = false
-        }
 
         SquadStreamTheme {
             Box(
@@ -358,36 +220,14 @@ class MainActivity : ComponentActivity() {
                     .statusBarsPadding()
                     .navigationBarsPadding()
             ) {
-                if ((voiceConnected || isStreaming) && !roomMinimized) {
-                    VoiceRoomScreen(
-                        myName = voiceName,
-                        presetLabel = "${selectedPreset.height}p${selectedPreset.fps}",
-                        onMinimize = { roomMinimized = true },
-                        onCopyCode = { copyRoomCode() },
-                        onShareCode = { shareRoomCode() },
-                        onToggleSpeaker = { sendVoiceAction(VoiceService.ACTION_TOGGLE_SPEAKER) },
-                        onOpenSettings = { showSettingsSheet = true },
-                        onToggleMic = { sendVoiceAction(VoiceService.ACTION_TOGGLE_MIC) },
-                        onGoLive = { onGoLiveTapped() },
-                        onOpenMixer = { showMixerSheet = true },
-                        onLeave = { onLeaveTapped() },
-                    )
-                } else {
-                    LobbyScreen(
-                        voiceName = voiceName,
-                        onEditName = { showNameDialog = true },
-                        joinCode = joinCode,
-                        onJoinCodeChange = { joinCode = it },
-                        onCreateRoom = { onCreateRoomTapped() },
-                        onJoinRoom = { onJoinRoomTapped() },
-                        onGoLiveSolo = { onGoLiveTapped() },
-                        streamKeySet = streamKey.isNotBlank(),
-                        presetLabel = "${selectedPreset.height}p${selectedPreset.fps}",
-                        hudEnabled = hudEnabled,
-                        onOpenSettings = { showSettingsSheet = true },
-                        onBackToRoom = { roomMinimized = false },
-                    )
-                }
+                LobbyScreen(
+                    onGoLive = { onGoLiveTapped() },
+                    onOpenMixer = { showMixerSheet = true },
+                    streamKeySet = streamKey.isNotBlank(),
+                    presetLabel = "${selectedPreset.height}p${selectedPreset.fps}",
+                    hudEnabled = hudEnabled,
+                    onOpenSettings = { showSettingsSheet = true },
+                )
 
                 if (showSettingsSheet) {
                     StreamSettingsSheet(
@@ -403,14 +243,6 @@ class MainActivity : ComponentActivity() {
                         overlayGranted = overlayGranted,
                         onRequestOverlay = { requestOverlayPermission() },
                         onToggleHud = { toggleHud(it) },
-                        ablyKey = ablyKey,
-                        onAblyKeyChange = { ablyKey = it; saveVoicePrefs() },
-                        onClearAblyKey = {
-                            ablyKey = ""
-                            prefs.edit().remove("ably_key").apply()
-                            toast("Saved key cleared — the built-in key will be used")
-                        },
-                        builtInKeyPresent = BuildConfig.ABLY_API_KEY.isNotBlank(),
                         onDismiss = { showSettingsSheet = false },
                     )
                 }
@@ -419,27 +251,7 @@ class MainActivity : ComponentActivity() {
                     AudioMixerSheet(
                         onMicGainChange = { sendStreamGain(StreamService.ACTION_SET_MIC_GAIN, it) },
                         onGameGainChange = { sendStreamGain(StreamService.ACTION_SET_GAME_GAIN, it) },
-                        onToggleSquadMute = { sendSquadMuteToggle() },
                         onDismiss = { showMixerSheet = false },
-                    )
-                }
-
-                if (showNameDialog) {
-                    AlertDialog(
-                        onDismissRequest = { showNameDialog = false },
-                        title = { Text("Your name in the room") },
-                        text = {
-                            OutlinedTextField(
-                                value = voiceName,
-                                onValueChange = { voiceName = it; saveVoicePrefs() },
-                                label = { Text("Name") },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true
-                            )
-                        },
-                        confirmButton = {
-                            TextButton(onClick = { showNameDialog = false }) { Text("Done") }
-                        }
                     )
                 }
             }
