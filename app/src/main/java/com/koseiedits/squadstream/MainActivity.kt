@@ -422,6 +422,19 @@ class MainActivity : ComponentActivity() {
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
             )
+            if (ablyKey.isNotBlank()) {
+                Button(
+                    onClick = {
+                        // A key typed in here beats the built-in key. If it
+                        // is the old (revoked) one, the room can never
+                        // connect — clearing it falls back to built-in.
+                        ablyKey = ""
+                        prefs.edit().remove("ably_key").apply()
+                        toast("Saved key cleared — the built-in key will be used")
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Clear saved key") }
+            }
             OutlinedTextField(
                 value = voiceName,
                 onValueChange = { voiceName = it; saveVoicePrefs() },
