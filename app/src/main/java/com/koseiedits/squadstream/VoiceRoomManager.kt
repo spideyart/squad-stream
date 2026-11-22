@@ -105,7 +105,12 @@ class VoiceRoomManager(private val appContext: Context) {
             scope.launch { sig.incoming.collect { handleSignal(it) } }
             sig.start(
                 onJoined = {
-                    sig.send(SignalMessage(type = SignalTypes.JOIN, from = myId, name = myName))
+                    sig.send(
+                        SignalMessage(
+                            type = SignalTypes.JOIN, from = myId, name = myName,
+                            muted = micMuted,
+                        )
+                    )
                     StreamState.setVoiceConnected(true)
                     StreamState.addLog("Joined voice room $code")
                 },
@@ -186,6 +191,8 @@ class VoiceRoomManager(private val appContext: Context) {
         micMuted = muted
         rtcHandler.post { localTrack?.setEnabled(!muted) }
         StreamState.setVoiceMicMuted(muted)
+        // Tell the room so their screens show my muted icon.
+        signaling?.send(SignalMessage(type = SignalTypes.MIC, from = myId, muted = muted))
     }
 
     fun setSpeakerOn(on: Boolean) {
@@ -258,10 +265,11 @@ class VoiceRoomManager(private val appContext: Context) {
         when (msg.type) {
             SignalTypes.JOIN -> {
                 peerNames[msg.from] = msg.name ?: "Player"
+                StreamState.setPeerMuted(msg.from, msg.muted)
                 signaling?.send(
                     SignalMessage(
                         type = SignalTypes.HELLO, from = myId,
-                        to = msg.from, name = myName,
+                        to = msg.from, name = myName, muted = micMuted,
                     )
                 )
                 // The lower peer id offers — do it here too. If I joined
@@ -273,6 +281,7 @@ class VoiceRoomManager(private val appContext: Context) {
             }
             SignalTypes.HELLO -> {
                 peerNames[msg.from] = msg.name ?: "Player"
+                StreamState.setPeerMuted(msg.from, msg.muted)
                 updatePeersFlow()
                 // Lower peer id offers; the other side waits for the offer.
                 if (myId < msg.from) createOfferTo(msg.from)
@@ -312,6 +321,7 @@ class VoiceRoomManager(private val appContext: Context) {
                 )
             }
             SignalTypes.LEAVE -> removePeer(msg.from)
+            SignalTypes.MIC -> StreamState.setPeerMuted(msg.from, msg.muted)
         }
     }
 
@@ -374,6 +384,7 @@ class VoiceRoomManager(private val appContext: Context) {
         remoteTracks.remove(peerId)
         peerNames.remove(peerId)
         StreamState.removeVoiceLevel(peerId)
+        StreamState.removePeerMuted(peerId)
         updatePeersFlow()
         StreamState.addLog("Squad mate left")
     }
@@ -399,7 +410,7 @@ class VoiceRoomManager(private val appContext: Context) {
     // ---- speaking levels (Discord-style: who is talking, how loud) ----
     //
     // WebRTC's getStats reports an audioLevel (0..1) on each audio track.
-    // Poll every 300 ms while in the room and push the levels to
+    // Poll every 150 ms while in the room and push the levels to
     // StreamState; the UI draws a green ring + level bar per person.
     // Honest limit: if this WebRTC build ever stops reporting audioLevel
     // for remote tracks, the rings stay dark — the voice itself is
@@ -409,7 +420,7 @@ class VoiceRoomManager(private val appContext: Context) {
         override fun run() {
             if (!joined) return
             pollLevels()
-            rtcHandler.postDelayed(this, 300)
+            rtcHandler.postDelayed(this, 150)
         }
     }
 
