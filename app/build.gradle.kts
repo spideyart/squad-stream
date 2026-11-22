@@ -24,8 +24,8 @@ android {
         applicationId = "com.koseiedits.squadstream"
         minSdk = 29
         targetSdk = 35
-        versionCode = 5
-        versionName = "1.0-turn"
+        versionCode = 6
+        versionName = "1.0-turn-hmac"
         // Baked-in Ably key (empty until the ABLY_API_KEY secret is set).
         buildConfigField("String", "ABLY_API_KEY", "\"$ablyApiKey\"")
         // WebRTC ships native libs per ABI; arm64 + armv7 cover every
