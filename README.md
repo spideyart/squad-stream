@@ -381,6 +381,50 @@ bars; the header never sits under the clock.
   upload. If your mobile data is slow, drop to the adaptive floor or
   stream on Wi-Fi.
 
+## Pre-launch checklist (what is done in code vs. device tests)
+
+Done in code:
+- **Backups off:** `android:allowBackup="false"` — the Ably key in
+  SharedPreferences is never backed up. The stream key is memory-only
+  (never saved, never logged by our code).
+- **Foreground service types:** StreamService `mediaProjection|microphone`,
+  VoiceService `microphone`, HudService `specialUse` + subtype — as
+  Android 14+ requires.
+- **Error surfaces:** wrong stream key → "Auth error — check stream key";
+  bad RTMP URL / dropped connection → "Connection failed: <reason>";
+  dead voice signaling → "Voice room couldn't connect" (fail-loud, no
+  fake "Waiting…" state); invalid room code → toast; **room full (4
+  players) → the 5th joiner is turned away with "Room is full"**.
+- **UI details:** `navigationBarsPadding()` on the root (dock clears the
+  3-button nav bar), `imePadding()` on the lobby (keyboard never covers
+  the room-code field), dock buttons ≥ 48dp touch targets.
+- **Rotation:** the Activity declares `configChanges` for orientation /
+  screen size, so rotating never recreates it and no state is lost.
+- **Version:** versionCode 2, versionName `1.0-discord-ui`.
+- **R8 / ProGuard:** not needed — release builds have minification OFF.
+- **No branch workflow:** this repo works on `main` directly, so there
+  is no `ui-discord-upgrade` branch to merge — every push above is
+  already on main.
+
+Still device tests (his side, needs real phones):
+- Permission matrix (mic / notifications / overlay / screen capture):
+  deny, grant, revoke from Settings.
+- 30+ minute live stream; 720p30 / 720p60 / 1080p30; Wi-Fi → mobile
+  data / airplane-mode drops; stream + room reconnect cleanly.
+- 2, 3 and 4 real devices: green ring on the right person, bubble mute
+  updates the room screen, no echo.
+- Stream survives minimise / lock / battery saver; stop from the
+  notification, the bubble and the app all stay in sync.
+- Small phone, large phone, tablet; larger system font / display size.
+
+Later (release / Play Store): test a signed RELEASE build, sign with his
+own keystore (back it up), build an AAB, add crash reporting, privacy
+policy + Data Safety form, written justification for the overlay
+permission and foreground services, demo video + store listing. The
+Ably key inside the APK is extractable by decompiling — accepted for a
+4-person squad app; the key is Publish+Subscribe only, and if it ever
+leaks, regenerate it in Ably + update the GitHub secret.
+
 ## Next: Phase 4
 
 Custom 3-channel PCM mixer: mic (VOICE_COMMUNICATION + AEC/NS) +
