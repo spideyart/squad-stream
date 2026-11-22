@@ -134,7 +134,7 @@ class VoiceRoomManager(private val appContext: Context) {
                     StreamState.setVoiceConnected(true)
                     StreamState.addLog("Joined voice room $code")
                 },
-                onFailed = { handleSignalingFailed() },
+                onFailed = { reason -> handleSignalingFailed(reason) },
             )
             joined = true
             StreamState.setVoiceRoomCode(code)
@@ -188,11 +188,19 @@ class VoiceRoomManager(private val appContext: Context) {
      * itself "connected" before attach and then show "Waiting for squad
      * mates…" forever while signaling was dead — no names, no voice, the
      * mic never started, and nothing told the user why.
+     *
+     * The raw failure is already in the log (AblySignaling logs it), so
+     * this only guesses at the key when there is no specific reason —
+     * an earlier version always blamed the key, even when Ably was
+     * rejecting the SDK itself, which sent the debugging down the wrong
+     * path for a whole morning.
      */
-    private fun handleSignalingFailed() {
+    private fun handleSignalingFailed(reason: String?) {
         rtcHandler.post {
             if (!joined) return@post
-            StreamState.addLog("Voice room couldn't connect — key may be wrong or expired")
+            if (reason.isNullOrBlank()) {
+                StreamState.addLog("Voice room couldn't connect — key may be wrong or expired")
+            }
             leaveInternal()
             try {
                 signaling?.stop()
