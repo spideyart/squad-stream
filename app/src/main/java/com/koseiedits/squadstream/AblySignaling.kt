@@ -91,9 +91,11 @@ class AblySignaling(
      * right moment to announce ourselves (a publish sent before attach
      * is dropped). [onFailed] runs when Ably refuses the connection
      * (wrong/expired key, or no network) so the caller can fail loudly
-     * instead of sitting in a dead room.
+     * instead of sitting in a dead room. It carries the raw reason, so
+     * the caller does not have to guess — an earlier version always
+     * blamed the key, even when Ably was rejecting the SDK itself.
      */
-    fun start(onJoined: (() -> Unit)? = null, onFailed: (() -> Unit)? = null) {
+    fun start(onJoined: (() -> Unit)? = null, onFailed: ((String?) -> Unit)? = null) {
         if (started) return
         started = true
         scope.launch {
@@ -117,13 +119,13 @@ class AblySignaling(
                     override fun onError(reason: ErrorInfo) {
                         Log.e(TAG, "Attach failed: ${reason.message}")
                         StreamState.addLog("Voice signaling failed: ${reason.message}")
-                        onFailed?.invoke()
+                        onFailed?.invoke(reason.message)
                     }
                 })
             } catch (e: AblyException) {
                 Log.e(TAG, "Ably start failed", e)
                 StreamState.addLog("Voice signaling failed: ${e.message}")
-                onFailed?.invoke()
+                onFailed?.invoke(e.message)
             }
         }
     }
