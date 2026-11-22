@@ -26,6 +26,7 @@ import org.webrtc.RtpReceiver
 import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
 import org.webrtc.audio.JavaAudioDeviceModule
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -81,6 +82,23 @@ class VoiceRoomManager(private val appContext: Context) {
     private var micMuted = false
     private var speakerOn = true
 
+    /**
+     * Stable per-device Ably clientId, generated once and kept in prefs.
+     * MAU pricing counts one unique clientId per phone per month — and a
+     * connection with NO clientId is rejected outright — so this must be
+     * stable across joins (a fresh id every join would burn MAUs) and
+     * must never be the per-join peer id. One phone = one MAU; the free
+     * package covers 500, a 4-player squad uses 4.
+     */
+    private fun stableAblyClientId(): String {
+        val prefs = appContext.getSharedPreferences(HudService.PREFS, Context.MODE_PRIVATE)
+        val existing = prefs.getString("ably_client_id", "").orEmpty()
+        if (existing.isNotBlank()) return existing
+        val fresh = "ss-" + UUID.randomUUID().toString().replace("-", "").take(10)
+        prefs.edit().putString("ably_client_id", fresh).apply()
+        return fresh
+    }
+
     // ---- join / leave ----
 
     fun join(apiKey: String, code: String, name: String) {
@@ -102,7 +120,7 @@ class VoiceRoomManager(private val appContext: Context) {
             }
             audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
             audioManager.isSpeakerphoneOn = speakerOn
-            val sig = AblySignaling(apiKey, code)
+            val sig = AblySignaling(apiKey, code, stableAblyClientId(), appContext)
             signaling = sig
             scope.launch { sig.incoming.collect { handleSignal(it) } }
             sig.start(
