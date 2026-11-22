@@ -2,6 +2,8 @@ package com.koseiedits.squadstream
 
 import android.Manifest
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -12,42 +14,43 @@ import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.koseiedits.squadstream.ui.screens.LobbyScreen
+import com.koseiedits.squadstream.ui.screens.VoiceRoomScreen
+import com.koseiedits.squadstream.ui.sheets.AudioMixerSheet
+import com.koseiedits.squadstream.ui.sheets.StreamSettingsSheet
+import com.koseiedits.squadstream.ui.theme.DiscordBackground
+import com.koseiedits.squadstream.ui.theme.SquadStreamTheme
 
+/**
+ * Main screen — Discord-style lobby + voice room (see the UI checklist).
+ *
+ * All the logic lives here (permissions, capture consent, service intents,
+ * voice join, HUD toggle); the look lives in ui/screens + ui/sheets.
+ * The audio-mode radios are gone: the mix is now the Game / Mic gains
+ * (mixer sheet + HUD sliders) and the mode is derived from them at
+ * stream start.
+ */
 class MainActivity : ComponentActivity() {
 
     companion object {
@@ -66,7 +69,6 @@ class MainActivity : ComponentActivity() {
     private var rtmpUrl by mutableStateOf("rtmp://a.rtmp.youtube.com/live2")
     private var streamKey by mutableStateOf("")
     private var selectedPreset by mutableStateOf(StreamConfig.PRESETS[0])
-    private var audioMode by mutableStateOf(AudioMode.MIX)
 
     // Phase 2 — floating controls state.
     private var hudEnabled by mutableStateOf(false)
@@ -78,6 +80,13 @@ class MainActivity : ComponentActivity() {
     private var voiceName by mutableStateOf("")
     private var joinCode by mutableStateOf("")
     private var pendingVoiceCode: String? = null
+
+    // UI state (Discord layout): which sheet is open, and whether the
+    // voice room is minimised to the lobby.
+    private var showSettingsSheet by mutableStateOf(false)
+    private var showMixerSheet by mutableStateOf(false)
+    private var showNameDialog by mutableStateOf(false)
+    private var roomMinimized by mutableStateOf(false)
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -117,6 +126,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Edge-to-edge with dark system bars; the root layout adds
+        // statusBarsPadding() so the header never sits under the clock.
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+        )
         refreshHudState()
         ablyKey = prefs.getString("ably_key", "").orEmpty()
         voiceName = prefs.getString("voice_name", "").orEmpty()
@@ -142,14 +157,15 @@ class MainActivity : ComponentActivity() {
 
     /**
      * The HUD bubble's START button opens the app with this extra. Start the
-     * stream at once when a key is already pasted; otherwise just show the
-     * form so the user can paste the key first.
+     * stream at once when a key is already pasted; otherwise open Settings
+     * so the user can paste the key first.
      */
     private fun handleAutoStartIntent(intent: Intent?) {
         if (intent?.getBooleanExtra(EXTRA_AUTO_START_CAPTURE, false) != true) return
         intent.removeExtra(EXTRA_AUTO_START_CAPTURE)
         if (streamKey.isBlank()) {
-            toast("Paste your stream key first, then tap START")
+            showSettingsSheet = true
+            toast("Paste your stream key first, then tap Go Live")
             return
         }
         onStartTapped()
@@ -176,12 +192,22 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun onCreateRoomTapped() {
+        if (voiceName.isBlank()) {
+            showNameDialog = true
+            toast("Type your name first")
+            return
+        }
         val code = RoomCodes.generate()
         joinCode = code
         startVoiceJoin(code)
     }
 
     private fun onJoinRoomTapped() {
+        if (voiceName.isBlank()) {
+            showNameDialog = true
+            toast("Type your name first")
+            return
+        }
         val code = joinCode.trim().uppercase()
         if (!RoomCodes.isValid(code)) {
             toast("Room code is 6 characters, A–Z and 2–9")
@@ -223,6 +249,19 @@ class MainActivity : ComponentActivity() {
         })
     }
 
+    private fun sendStreamGain(action: String, gain: Int) {
+        startService(Intent(this, StreamService::class.java).apply {
+            this.action = action
+            putExtra(StreamService.EXTRA_GAIN, gain)
+        })
+    }
+
+    private fun sendSquadMuteToggle() {
+        startService(Intent(this, StreamService::class.java).apply {
+            action = StreamService.ACTION_TOGGLE_SQUAD_MUTE
+        })
+    }
+
     private fun startHudService() {
         startService(Intent(this, HudService::class.java).apply {
             action = HudService.ACTION_START_HUD
@@ -235,334 +274,171 @@ class MainActivity : ComponentActivity() {
         })
     }
 
+    private fun toggleHud(on: Boolean) {
+        prefs.edit().putBoolean(HudService.PREF_HUD_ENABLED, on).apply()
+        hudEnabled = on
+        if (on) startHudService() else stopHudService()
+    }
+
+    private fun requestOverlayPermission() {
+        overlayPermissionLauncher.launch(
+            Intent(
+                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:$packageName")
+            )
+        )
+    }
+
+    /** The stream's audio mode, derived from the live mix gains. */
+    private fun deriveAudioMode(): AudioMode = when {
+        StreamState.micGain.value > 0 && StreamState.gameGain.value > 0 -> AudioMode.MIX
+        StreamState.micGain.value == 0 -> AudioMode.INTERNAL_ONLY
+        else -> AudioMode.MIC_ONLY
+    }
+
+    /** Go Live (dock / lobby): needs a stream key, else open Settings. */
+    private fun onGoLiveTapped() {
+        if (StreamState.isStreaming.value) {
+            onStopTapped()
+            return
+        }
+        if (streamKey.isBlank()) {
+            showSettingsSheet = true
+            toast("Paste your YouTube stream key first")
+            return
+        }
+        onStartTapped()
+    }
+
+    /** Leave: leave the room if in one, else stop the solo stream. */
+    private fun onLeaveTapped() {
+        if (StreamState.voiceConnected.value) {
+            sendVoiceAction(VoiceService.ACTION_LEAVE)
+        } else if (StreamState.isStreaming.value) {
+            onStopTapped()
+        }
+        roomMinimized = false
+    }
+
+    private fun copyRoomCode() {
+        val code = StreamState.voiceRoomCode.value
+        if (code.isBlank()) return
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("SquadStream room", code))
+        toast("Room code copied: $code")
+    }
+
+    private fun shareRoomCode() {
+        val code = StreamState.voiceRoomCode.value
+        if (code.isBlank()) return
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, "Join my SquadStream room: $code")
+        }
+        startActivity(Intent.createChooser(intent, "Invite squad"))
+    }
+
     @Composable
     private fun SquadStreamScreen() {
         val isStreaming by StreamState.isStreaming.collectAsStateWithLifecycle()
-        val status by StreamState.status.collectAsStateWithLifecycle()
-        val measured by StreamState.measuredBitrateBps.collectAsStateWithLifecycle()
-        val encoderBps by StreamState.encoderBitrateBps.collectAsStateWithLifecycle()
-        val logLines by StreamState.log.collectAsStateWithLifecycle()
         val voiceConnected by StreamState.voiceConnected.collectAsStateWithLifecycle()
-        val voiceCode by StreamState.voiceRoomCode.collectAsStateWithLifecycle()
-        val voicePeers by StreamState.voicePeers.collectAsStateWithLifecycle()
-        val voicePeerMap by StreamState.voicePeerMap.collectAsStateWithLifecycle()
-        val voiceLevels by StreamState.voiceLevels.collectAsStateWithLifecycle()
-        val myVoiceLevel by StreamState.myVoiceLevel.collectAsStateWithLifecycle()
-        val voiceMicMuted by StreamState.voiceMicMuted.collectAsStateWithLifecycle()
-        val voiceSpeakerOn by StreamState.voiceSpeakerOn.collectAsStateWithLifecycle()
 
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text("SquadStream", style = MaterialTheme.typography.headlineMedium)
-            Text(
-                "Stream your game to YouTube and talk with your squad.",
-                style = MaterialTheme.typography.bodyMedium
-            )
-
-            // Green dot while streaming, grey while idle — status at a glance.
-            Text(
-                "● $status",
-                style = MaterialTheme.typography.bodyLarge,
-                color = if (isStreaming) Color(0xFF2E7D32) else Color.Gray
-            )
-            if (isStreaming) {
-                Text(
-                    "Upload: ${measured / 1000} kbps • Encoder: ${encoderBps / 1000} kbps",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            }
-
-            OutlinedTextField(
-                value = rtmpUrl,
-                onValueChange = { rtmpUrl = it },
-                label = { Text("RTMP URL") },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = !isStreaming,
-                singleLine = true
-            )
-            OutlinedTextField(
-                value = streamKey,
-                onValueChange = { streamKey = it },
-                label = { Text("YouTube stream key") },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = !isStreaming,
-                singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
-            )
-
-            Text("Video quality", style = MaterialTheme.typography.titleMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StreamConfig.PRESETS.forEach { preset ->
-                    FilterChip(
-                        selected = selectedPreset == preset,
-                        onClick = { selectedPreset = preset },
-                        label = { Text(preset.label) },
-                        enabled = !isStreaming
-                    )
-                }
-            }
-
-            Text("What your stream hears", style = MaterialTheme.typography.titleMedium)
-            AudioMode.entries.forEach { mode ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(
-                        selected = audioMode == mode,
-                        onClick = {
-                            audioMode = mode
-                            // The radio is a preset for the live mix gains
-                            // (the HUD sliders move the same values).
-                            when (mode) {
-                                AudioMode.MIX -> {
-                                    StreamState.setMicGain(100)
-                                    StreamState.setGameGain(100)
-                                }
-                                AudioMode.INTERNAL_ONLY -> {
-                                    StreamState.setMicGain(0)
-                                    StreamState.setGameGain(100)
-                                }
-                                AudioMode.MIC_ONLY -> {
-                                    StreamState.setMicGain(100)
-                                    StreamState.setGameGain(0)
-                                }
-                            }
-                        },
-                        enabled = !isStreaming
-                    )
-                    Text(
-                        when (mode) {
-                            AudioMode.MIX -> "Mic + game audio (mix)"
-                            AudioMode.INTERNAL_ONLY -> "Game audio only"
-                            AudioMode.MIC_ONLY -> "Mic only"
-                        }
-                    )
-                }
-            }
-
-            Button(
-                onClick = { if (isStreaming) onStopTapped() else onStartTapped() },
-                modifier = Modifier.fillMaxWidth().height(56.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isStreaming) Color(0xFFC62828) else Color(0xFF2E7D32)
-                )
-            ) {
-                Text(
-                    if (isStreaming) "STOP STREAM" else "START STREAM",
-                    style = MaterialTheme.typography.titleMedium
-                )
-            }
-
-            Text("In-game bubble", style = MaterialTheme.typography.titleMedium)
-            Text(
-                "A bubble floats over your game so you can control the stream " +
-                    "without leaving it: stop/start, mic mute, mic/game mix, live bitrate.",
-                style = MaterialTheme.typography.bodySmall
-            )
-            if (!overlayGranted) {
-                Text(
-                    "Needs the 'Display over other apps' permission.",
-                    style = MaterialTheme.typography.bodySmall
-                )
-                Button(
-                    onClick = {
-                        overlayPermissionLauncher.launch(
-                            Intent(
-                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                Uri.parse("package:$packageName")
-                            )
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Allow display over other apps")
-                }
-            } else if (!hudEnabled) {
-                Button(
-                    onClick = {
-                        prefs.edit().putBoolean(HudService.PREF_HUD_ENABLED, true).apply()
-                        hudEnabled = true
-                        startHudService()
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Enable floating controls")
-                }
-            } else {
-                Button(
-                    onClick = {
-                        prefs.edit().putBoolean(HudService.PREF_HUD_ENABLED, false).apply()
-                        hudEnabled = false
-                        stopHudService()
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Disable floating controls")
-                }
-            }
-
-            Text("Squad voice", style = MaterialTheme.typography.titleMedium)
-            Text(
-                if (BuildConfig.ABLY_API_KEY.isNotBlank())
-                    "Talk with your squad while you play. The key is built in — leave the field blank to use it, or paste a different one to override."
-                else
-                    "Talk with your squad while you play. Needs a free Ably account first (one-time setup — see the README).",
-                style = MaterialTheme.typography.bodySmall
-            )
-            OutlinedTextField(
-                value = ablyKey,
-                onValueChange = { ablyKey = it; saveVoicePrefs() },
-                label = { Text("Ably API key") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
-            )
-            if (ablyKey.isNotBlank()) {
-                Button(
-                    onClick = {
-                        // A key typed in here beats the built-in key. If it
-                        // is the old (revoked) one, the room can never
-                        // connect — clearing it falls back to built-in.
-                        ablyKey = ""
-                        prefs.edit().remove("ably_key").apply()
-                        toast("Saved key cleared — the built-in key will be used")
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("Clear saved key") }
-            }
-            OutlinedTextField(
-                value = voiceName,
-                onValueChange = { voiceName = it; saveVoicePrefs() },
-                label = { Text("Your name in the room") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
-            )
-            if (!voiceConnected) {
-                Button(
-                    onClick = {
-                        if (voiceName.isBlank()) {
-                            toast("Type your name first")
-                        } else {
-                            saveVoicePrefs()
-                            toast("Name saved — you'll join as ${voiceName.trim()}")
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("Save name") }
-            }
-            if (!voiceConnected) {
-                OutlinedTextField(
-                    value = joinCode,
-                    onValueChange = { joinCode = it.uppercase() },
-                    label = { Text("Room code (6 characters)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = { onCreateRoomTapped() },
-                        modifier = Modifier.weight(1f)
-                    ) { Text("Create room") }
-                    Button(
-                        onClick = { onJoinRoomTapped() },
-                        modifier = Modifier.weight(1f)
-                    ) { Text("Join room") }
-                }
-            } else {
-                Text(
-                    "You: ${voiceName.ifBlank { "Player" }}",
-                    style = MaterialTheme.typography.bodyLarge
-                )
-                Text(
-                    "Room $voiceCode • ${voicePeers.size} mate${if (voicePeers.size == 1) "" else "s"}",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                VoiceLevelRow(name = "You", level = myVoiceLevel)
-                if (voicePeers.isEmpty()) {
-                    Text(
-                        "Waiting for squad mates… share the code: $voiceCode",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
-                voicePeerMap.entries.sortedBy { it.value }.forEach { (id, name) ->
-                    VoiceLevelRow(name = name, level = voiceLevels[id] ?: 0f)
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = { sendVoiceAction(VoiceService.ACTION_TOGGLE_MIC) },
-                        modifier = Modifier.weight(1f)
-                    ) { Text(if (voiceMicMuted) "Unmute my mic" else "Mute my mic") }
-                    Button(
-                        onClick = { sendVoiceAction(VoiceService.ACTION_TOGGLE_SPEAKER) },
-                        modifier = Modifier.weight(1f)
-                    ) { Text(if (voiceSpeakerOn) "Speaker on" else "Speaker off") }
-                }
-                Button(
-                    onClick = { sendVoiceAction(VoiceService.ACTION_LEAVE) },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828))
-                ) { Text("LEAVE ROOM") }
-            }
-
-            Text("Recent activity", style = MaterialTheme.typography.titleMedium)
-            logLines.forEach { line ->
-                Text(line, style = MaterialTheme.typography.bodySmall)
-            }
-
-            Text(
-                "Stream key is never saved. Get it in YouTube Studio → Go Live → " +
-                    "Stream settings. Keep it private — anyone with it can stream to your channel.",
-                style = MaterialTheme.typography.bodySmall
-            )
+        // Joining opens the room; leaving/stopping clears the minimise flag.
+        LaunchedEffect(voiceConnected) {
+            if (voiceConnected) roomMinimized = false
         }
-    }
 
-    /** Discord-style voice row: green ring + level bar while talking. */
-    @Composable
-    private fun VoiceLevelRow(name: String, level: Float) {
-        val speaking = level > 0.03f
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .border(
-                    2.dp,
-                    if (speaking) Color(0xFF2E7D32) else Color(0xFFE0E0E0),
-                    RoundedCornerShape(10.dp)
-                )
-                .padding(10.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    if (speaking) "● " else "○ ",
-                    color = if (speaking) Color(0xFF2E7D32) else Color.Gray
-                )
-                Text(name, style = MaterialTheme.typography.bodyLarge)
-                if (speaking) {
-                    Text(
-                        "  speaking",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF2E7D32)
-                    )
-                }
-            }
+        SquadStreamTheme {
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(6.dp)
-                    .background(Color(0xFFE0E0E0), RoundedCornerShape(3.dp))
+                    .fillMaxSize()
+                    .background(DiscordBackground)
+                    .statusBarsPadding()
             ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth(level.coerceIn(0f, 1f))
-                        .height(6.dp)
-                        .background(Color(0xFF2E7D32), RoundedCornerShape(3.dp))
-                )
+                if ((voiceConnected || isStreaming) && !roomMinimized) {
+                    VoiceRoomScreen(
+                        myName = voiceName,
+                        presetLabel = "${selectedPreset.height}p${selectedPreset.fps}",
+                        onMinimize = { roomMinimized = true },
+                        onCopyCode = { copyRoomCode() },
+                        onShareCode = { shareRoomCode() },
+                        onToggleSpeaker = { sendVoiceAction(VoiceService.ACTION_TOGGLE_SPEAKER) },
+                        onOpenSettings = { showSettingsSheet = true },
+                        onToggleMic = { sendVoiceAction(VoiceService.ACTION_TOGGLE_MIC) },
+                        onGoLive = { onGoLiveTapped() },
+                        onOpenMixer = { showMixerSheet = true },
+                        onLeave = { onLeaveTapped() },
+                    )
+                } else {
+                    LobbyScreen(
+                        voiceName = voiceName,
+                        onEditName = { showNameDialog = true },
+                        joinCode = joinCode,
+                        onJoinCodeChange = { joinCode = it },
+                        onCreateRoom = { onCreateRoomTapped() },
+                        onJoinRoom = { onJoinRoomTapped() },
+                        onGoLiveSolo = { onGoLiveTapped() },
+                        streamKeySet = streamKey.isNotBlank(),
+                        presetLabel = "${selectedPreset.height}p${selectedPreset.fps}",
+                        hudEnabled = hudEnabled,
+                        onOpenSettings = { showSettingsSheet = true },
+                        onBackToRoom = { roomMinimized = false },
+                    )
+                }
+
+                if (showSettingsSheet) {
+                    StreamSettingsSheet(
+                        rtmpUrl = rtmpUrl,
+                        onRtmpUrlChange = { rtmpUrl = it },
+                        streamKey = streamKey,
+                        onStreamKeyChange = { streamKey = it },
+                        isStreaming = isStreaming,
+                        presets = StreamConfig.PRESETS,
+                        selectedPreset = selectedPreset,
+                        onPresetChange = { selectedPreset = it },
+                        hudEnabled = hudEnabled,
+                        overlayGranted = overlayGranted,
+                        onRequestOverlay = { requestOverlayPermission() },
+                        onToggleHud = { toggleHud(it) },
+                        ablyKey = ablyKey,
+                        onAblyKeyChange = { ablyKey = it; saveVoicePrefs() },
+                        onClearAblyKey = {
+                            ablyKey = ""
+                            prefs.edit().remove("ably_key").apply()
+                            toast("Saved key cleared — the built-in key will be used")
+                        },
+                        builtInKeyPresent = BuildConfig.ABLY_API_KEY.isNotBlank(),
+                        onDismiss = { showSettingsSheet = false },
+                    )
+                }
+
+                if (showMixerSheet) {
+                    AudioMixerSheet(
+                        onMicGainChange = { sendStreamGain(StreamService.ACTION_SET_MIC_GAIN, it) },
+                        onGameGainChange = { sendStreamGain(StreamService.ACTION_SET_GAME_GAIN, it) },
+                        onToggleSquadMute = { sendSquadMuteToggle() },
+                        onDismiss = { showMixerSheet = false },
+                    )
+                }
+
+                if (showNameDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showNameDialog = false },
+                        title = { Text("Your name in the room") },
+                        text = {
+                            OutlinedTextField(
+                                value = voiceName,
+                                onValueChange = { voiceName = it; saveVoicePrefs() },
+                                label = { Text("Name") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                            )
+                        },
+                        confirmButton = {
+                            TextButton(onClick = { showNameDialog = false }) { Text("Done") }
+                        }
+                    )
+                }
             }
         }
     }
@@ -597,7 +473,7 @@ class MainActivity : ComponentActivity() {
             putExtra(StreamService.EXTRA_HEIGHT, selectedPreset.height)
             putExtra(StreamService.EXTRA_FPS, selectedPreset.fps)
             putExtra(StreamService.EXTRA_VIDEO_BITRATE, selectedPreset.videoBitrateBps)
-            putExtra(StreamService.EXTRA_AUDIO_MODE, audioMode.name)
+            putExtra(StreamService.EXTRA_AUDIO_MODE, deriveAudioMode().name)
         }
         ContextCompat.startForegroundService(this, intent)
     }
