@@ -24,8 +24,8 @@ android {
         applicationId = "com.koseiedits.squadstream"
         minSdk = 29
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0-phase3"
+        versionCode = 2
+        versionName = "1.0-discord-ui"
         // Baked-in Ably key (empty until the ABLY_API_KEY secret is set).
         buildConfigField("String", "ABLY_API_KEY", "\"$ablyApiKey\"")
         // WebRTC ships native libs per ABI; arm64 + armv7 cover every
@@ -76,5 +76,6 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
+    implementation(libs.androidx.material.icons.extended)
     debugImplementation(libs.androidx.ui.tooling)
 }
