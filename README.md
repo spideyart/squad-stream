@@ -152,8 +152,11 @@ WebRTC comes from the maintained `io.github.webrtc-sdk:android`
 fork (150.7871.01) — Google's `org.webrtc:google-webrtc` is dead (last
 1.0.32006, Aug 2020, JCenter gone) and does not resolve in 2026. Same
 `org.webrtc.*` package, so the code looks like stock WebRTC. ICE uses
-free public Google STUN (`stun.l.google.com:19302`); there is no TURN
-server yet.
+free public Google STUN plus Metered's free OpenRelay TURN
+(`turn:openrelay.metered.ca:80/443`, public `openrelayproject`
+credentials) — added in 1.0-turn, because STUN alone could not punch
+through mobile-data carrier NAT: names showed, no audio, ICE kept
+failing and the peer kept "leaving".
 
 ### Ably setup (do this once, ~2 minutes)
 
@@ -322,7 +325,7 @@ running, with no crash and no overheating warning in 10 minutes of play.
 | Mic mute also kills game audio | — | Should not happen: mute swaps to game-only source. If it does, report it — that's a bug, not the design |
 | Sliders do nothing mid-range | By design until Phase 4 | Only 0 switches a source off; true volume gain needs the Phase 4 mixer |
 | Room never shows mates | Wrong API key, or no network — the old "SDK not compatible" error is fixed in this build (device SDK 2.0.0) | Re-copy the key from Ably dashboard → your app → API Keys; check mobile data |
-| Voice connects on Wi-Fi but not mobile data | Symmetric NAT / carrier NAT | Free STUN only — two players behind strict NATs may fail. A TURN server (Phase 4 hardening) fixes it |
+| Voice connects on Wi-Fi but not mobile data | Symmetric NAT / carrier NAT | Fixed in 1.0-turn: free Metered OpenRelay TURN added. If voice still fails on mobile data, the public relay may be down — try Wi-Fi to confirm, and report it |
 | Echo while streaming + voice together | Mic captured twice (stream + WebRTC) | Lower the speaker volume or use earphones; the echo cancelers usually cope, but two captures can fight on some phones |
 | Crash on Start (Android 14) | Foreground service type | Already handled: manifest declares `mediaProjection\|microphone` and the service passes both to `startForeground()` |
 | Badge missing, stream fine | Overlay failed | Cosmetic only — the overlay is best-effort by design; stream is unaffected |
@@ -357,7 +360,9 @@ running, with no crash and no overheating warning in 10 minutes of play.
   is idle by design — no mic indicator yet is normal, not a bug.
 - **Names show but no voice = network (ICE).** If both phones list each
   other but hear nothing, the direct connection failed (mobile-data
-  NAT). Next fix for that is a free TURN server.
+  NAT). Fixed in 1.0-turn with a free TURN relay. If it still happens,
+  the relay itself may be down — the test is whether the same two
+  phones can hear each other on Wi-Fi.
 - **Rotation:** Phase 1 encodes landscape 1280×720, rotation 0. If you
   start the stream from a portrait screen, the image is scaled, not
   rotated. A rotation-aware mode comes with the Phase 2 HUD work.
