@@ -117,6 +117,12 @@ of each other, the one with the lower peer id sends the offer; the other
 answers. Teammates hear ONLY your mic — never game audio, never their own
 voice back. Remote voices play through the phone speaker by default.
 
+Discord-style speaking view: the room lists everyone by name with a live
+mic level (WebRTC `getStats` `audioLevel`, polled ~3x/sec). The row of the
+person talking gets a green ring, a green dot and a level bar. Your own
+row ("You") shows your mic level too. The name is set with the **Save
+name** button under the name field — it confirms with a toast.
+
 Signaling is Ably Realtime: one channel per room code, one event
 (`signal`) carrying the join/hello/offer/answer/ICE/leave messages as
 JSON strings. No tables, no database, no login — the API key is all the
@@ -185,7 +191,8 @@ one (clear the paste-in field on any phone that had the old key typed in).
    squad mates…". A "Squad voice • Room CODE" notification appears.
 3. **Join (second phone).** Install the same APK, type your name, paste
    the code, Join — both phones list each other by name within a few seconds.
-4. **Talk.** Speak on phone A: phone B hears you through the speaker.
+4. **Talk.** Speak on phone A: phone B hears you through the speaker —
+   and A's row on B's screen lights up green with a moving level bar.
    Speak on phone B: phone A hears you. No game audio leaks into the
    room (start a stream too and check the YouTube preview still has
    game + mic, not squad voices).
