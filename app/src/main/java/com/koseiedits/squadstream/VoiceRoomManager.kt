@@ -5,7 +5,9 @@ import android.content.Intent
 import android.media.AudioManager
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.Looper
 import android.util.Log
+import android.widget.Toast
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -264,6 +266,15 @@ class VoiceRoomManager(private val appContext: Context) {
         if (msg.to != null && msg.to != myId) return
         when (msg.type) {
             SignalTypes.JOIN -> {
+                // Room cap: 4 players (me + 3 others). A 5th joiner gets
+                // turned away with FULL instead of silently joining a
+                // 5-way mesh the grid was never built for.
+                if (peerNames.size >= 3) {
+                    signaling?.send(
+                        SignalMessage(type = SignalTypes.FULL, from = myId, to = msg.from)
+                    )
+                    return
+                }
                 peerNames[msg.from] = msg.name ?: "Player"
                 StreamState.setPeerMuted(msg.from, msg.muted)
                 signaling?.send(
@@ -322,6 +333,30 @@ class VoiceRoomManager(private val appContext: Context) {
             }
             SignalTypes.LEAVE -> removePeer(msg.from)
             SignalTypes.MIC -> StreamState.setPeerMuted(msg.from, msg.muted)
+            SignalTypes.FULL -> {
+                // Turned away: the room is already full (4 players).
+                if (msg.to == myId) handleRoomFull()
+            }
+        }
+    }
+
+    /** Turned away from a full room: leave cleanly and say so. */
+    private fun handleRoomFull() {
+        rtcHandler.post {
+            if (!joined) return@post
+            StreamState.addLog("Room is full (4 players)")
+            leaveInternal()
+            try {
+                signaling?.stop()
+            } catch (_: Exception) {
+            }
+            try {
+                appContext.stopService(Intent(appContext, VoiceService::class.java))
+            } catch (_: Exception) {
+            }
+            Handler(Looper.getMainLooper()).post {
+                Toast.makeText(appContext, "Room is full (4 players)", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
