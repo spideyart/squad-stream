@@ -6,6 +6,7 @@ import android.media.AudioManager
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
+import android.util.Base64
 import android.util.Log
 import android.widget.Toast
 import kotlinx.coroutines.CoroutineScope
@@ -28,6 +29,8 @@ import org.webrtc.SessionDescription
 import org.webrtc.audio.JavaAudioDeviceModule
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
 
 /**
  * Phase 3 — 4-person WebRTC mesh voice room (audio only).
@@ -50,11 +53,15 @@ import java.util.concurrent.ConcurrentHashMap
  * streaming (RootEncoder's MixAudioSource + WebRTC) — works on most
  * phones, watch for echo on the test. Signaling is fire-and-forget, so a
  * lost offer means that peer never connects until someone rejoins. ICE
- * uses free public STUN plus Metered's free OpenRelay TURN — both
- * phones are on mobile data behind carrier NAT, and STUN alone could
- * not punch through it (names showed, no audio, ICE kept failing and
- * the peer kept "leaving"). The relay is a shared public service, so
- * if it is ever down or rate-limited the room goes silent again.
+ * uses free public STUN plus Metered's OpenRelay TURN via its
+ * shared-secret scheme (fresh HMAC credentials per PeerConnection —
+ * the old openrelayproject/openrelayproject login is stale and no
+ * longer honoured, which the phone test proved: STUN worked, no relay
+ * candidate appeared). Both phones are on mobile data behind carrier
+ * NAT, and STUN alone could not punch through it (names showed, no
+ * audio, ICE kept failing and the peer kept "leaving"). The relay is
+ * a shared public service, so if it is ever down or rate-limited the
+ * room goes silent again.
  */
 class VoiceRoomManager(private val appContext: Context) {
 
@@ -100,6 +107,35 @@ class VoiceRoomManager(private val appContext: Context) {
         val fresh = "ss-" + UUID.randomUUID().toString().replace("-", "").take(10)
         prefs.edit().putString("ably_client_id", fresh).apply()
         return fresh
+    }
+
+    /**
+     * TURN credentials for Metered's OpenRelay, computed fresh on every
+     * call (the standard coturn "TURN REST API" / use-auth-secret
+     * scheme, the same one Nextcloud Talk and Jitsi use — no signup).
+     * username = "<expiry-unix-seconds>:squadstream", credential =
+     * base64(HMAC-SHA1(shared secret, username)). The secret is
+     * published by Metered for exactly this use, so it is not a secret
+     * to protect — the 24-hour expiry is what stops reuse. Each
+     * PeerConnection gets a fresh pair, so nothing stored ever goes
+     * stale (a saved credential past its TTL would fail exactly like
+     * a dead relay, with no visible difference).
+     */
+    private fun turnCredentials(): Pair<String, String> {
+        val expiry = System.currentTimeMillis() / 1000 + 24 * 60 * 60
+        val username = "$expiry:squadstream"
+        val mac = Mac.getInstance("HmacSHA1")
+        mac.init(
+            SecretKeySpec(
+                "openrelayprojectsecret".toByteArray(Charsets.UTF_8),
+                "HmacSHA1",
+            )
+        )
+        val credential = Base64.encodeToString(
+            mac.doFinal(username.toByteArray(Charsets.UTF_8)),
+            Base64.NO_WRAP,
+        )
+        return username to credential
     }
 
     // ---- join / leave ----
@@ -399,29 +435,40 @@ class VoiceRoomManager(private val appContext: Context) {
     private fun getOrCreatePc(peerId: String): PeerConnection? {
         peers[peerId]?.let { return it }
         val f = factory ?: return null
+        // TURN credentials are computed fresh for every PeerConnection
+        // (see turnCredentials): the shared-secret scheme gives each
+        // one a 24-hour life, so nothing stored ever goes stale.
+        val (turnUser, turnPass) = turnCredentials()
         val config = PeerConnection.RTCConfiguration(
             listOf(
                 PeerConnection.IceServer.builder("stun:stun.l.google.com:19302")
                     .createIceServer(),
                 PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302")
                     .createIceServer(),
-                // Free public TURN (Metered OpenRelay). Both phones are
-                // on mobile data behind carrier NAT — STUN alone cannot
-                // punch through symmetric NAT, so without a relay the
-                // peer connection never forms: names show, no audio, and
-                // ICE keeps failing until the peer is dropped. The relay
-                // only carries the voice packets; it never sees the key.
-                PeerConnection.IceServer.builder("turn:openrelay.metered.ca:80")
-                    .setUsername("openrelayproject")
-                    .setPassword("openrelayproject")
+                // Free TURN (Metered OpenRelay, shared-secret scheme).
+                // The widely copied openrelayproject/openrelayproject
+                // login is STALE — Metered no longer honours it, which
+                // is why the phone test showed no relay candidate.
+                // This scheme needs no signup: the username carries a
+                // 24h expiry and the password is HMAC-SHA1 of it under
+                // the published shared secret. Both phones are on
+                // mobile data behind carrier NAT — STUN alone cannot
+                // punch through symmetric NAT, so without a working
+                // relay the peer connection never forms: names show, no
+                // audio, and ICE keeps failing until the peer is
+                // dropped. The relay only carries the voice packets;
+                // it never sees the key.
+                PeerConnection.IceServer.builder("turn:staticauth.openrelay.metered.ca:80")
+                    .setUsername(turnUser)
+                    .setPassword(turnPass)
                     .createIceServer(),
-                PeerConnection.IceServer.builder("turn:openrelay.metered.ca:443")
-                    .setUsername("openrelayproject")
-                    .setPassword("openrelayproject")
+                PeerConnection.IceServer.builder("turn:staticauth.openrelay.metered.ca:443")
+                    .setUsername(turnUser)
+                    .setPassword(turnPass)
                     .createIceServer(),
-                PeerConnection.IceServer.builder("turn:openrelay.metered.ca:443?transport=tcp")
-                    .setUsername("openrelayproject")
-                    .setPassword("openrelayproject")
+                PeerConnection.IceServer.builder("turn:staticauth.openrelay.metered.ca:443?transport=tcp")
+                    .setUsername(turnUser)
+                    .setPassword(turnPass)
                     .createIceServer(),
             )
         ).apply {
