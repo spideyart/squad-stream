@@ -329,12 +329,16 @@ running, with no crash and no overheating warning in 10 minutes of play.
 
 ## Known limits (honest)
 
-- **Voice room: if nobody shows up, check the key first.** The room
-  only exists if Ably connects. The app now fails loudly instead of
-  sitting in a dead room: if attach fails (wrong/expired key, or no
-  network) it leaves the room and logs "Voice room couldn't connect".
-  The Nov 2026 cause — the old ably-java 1.8.2 SDK rejected on MAU
-  accounts — is fixed in this build (device SDK 2.0.0 + stable
+- **Voice room: if nobody shows up, check the build first.** The
+  lobby now prints the version at the bottom ("SquadStream 1.0-ably-v2").
+  If it shows an older version, the old APK is still installed: each
+  cloud build signs with a fresh debug key, so installing the new APK
+  over the old one fails silently — uninstall the app first, then
+  install the new APK. The room only exists if Ably connects. The app
+  now fails loudly instead of sitting in a dead room: if attach fails
+  (wrong/expired key, or no network) it leaves the room and logs the
+  raw reason. The Nov 2026 cause — the old ably-java 1.8.2 SDK rejected
+  on MAU accounts — is fixed in this build (device SDK 2.0.0 + stable
   clientId per phone). The remaining causes, in order: (1) the GitHub
   secret `ABLY_API_KEY` still holds the OLD key after a rotation — update
   the secret, then a new build bakes the new key in (updating the secret
