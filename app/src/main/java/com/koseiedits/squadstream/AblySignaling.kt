@@ -73,9 +73,11 @@ class AblySignaling(
      * Connects, subscribes to the room channel and starts forwarding
      * messages. [onJoined] runs once the channel attach completes — the
      * right moment to announce ourselves (a publish sent before attach
-     * is dropped).
+     * is dropped). [onFailed] runs when Ably refuses the connection
+     * (wrong/expired key, or no network) so the caller can fail loudly
+     * instead of sitting in a dead room.
      */
-    fun start(onJoined: (() -> Unit)? = null) {
+    fun start(onJoined: (() -> Unit)? = null, onFailed: (() -> Unit)? = null) {
         if (started) return
         started = true
         scope.launch {
@@ -94,11 +96,13 @@ class AblySignaling(
                     override fun onError(reason: ErrorInfo) {
                         Log.e(TAG, "Attach failed: ${reason.message}")
                         StreamState.addLog("Voice signaling failed: ${reason.message}")
+                        onFailed?.invoke()
                     }
                 })
             } catch (e: AblyException) {
                 Log.e(TAG, "Ably start failed", e)
                 StreamState.addLog("Voice signaling failed: ${e.message}")
+                onFailed?.invoke()
             }
         }
     }
