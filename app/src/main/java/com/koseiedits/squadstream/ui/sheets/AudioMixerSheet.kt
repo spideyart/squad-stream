@@ -30,25 +30,21 @@ import com.koseiedits.squadstream.ui.theme.DiscordText
 import com.koseiedits.squadstream.ui.theme.DiscordTextSecondary
 
 /**
- * 3-channel audio mixer sheet.
+ * 2-channel audio mixer sheet.
  *
  * Game + My Mic are real sliders (they drive the live mix — 0 means that
- * channel is off, exactly like the HUD sliders). Squad Voices is mute-only
- * for now: WebRTC has no per-track volume API, so a real squad volume
- * slider needs the Phase 4 custom mixer. No fake slider.
+ * channel is off, exactly like the HUD sliders).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AudioMixerSheet(
     onMicGainChange: (Int) -> Unit,
     onGameGainChange: (Int) -> Unit,
-    onToggleSquadMute: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val micGain by StreamState.micGain.collectAsStateWithLifecycle()
     val gameGain by StreamState.gameGain.collectAsStateWithLifecycle()
-    val squadMuted by StreamState.squadMuted.collectAsStateWithLifecycle()
 
     val modeLabel = when {
         micGain > 0 && gameGain > 0 -> "Mic + game audio"
@@ -89,27 +85,6 @@ fun AudioMixerSheet(
                 gain = micGain,
                 onGainChange = onMicGainChange
             )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text("Squad voices", style = MaterialTheme.typography.bodyLarge, color = DiscordText)
-                    Text(
-                        "Mute only for now — squad volume comes with the Phase 4 mixer.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = DiscordTextSecondary
-                    )
-                }
-                IconButton(onClick = onToggleSquadMute) {
-                    Icon(
-                        if (squadMuted) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp,
-                        contentDescription = if (squadMuted) "Unmute squad" else "Mute squad",
-                        tint = DiscordText
-                    )
-                }
-            }
             Spacer(Modifier.height(4.dp))
         }
     }
