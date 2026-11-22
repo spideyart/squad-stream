@@ -16,9 +16,6 @@
     <!-- Foreground-service notification (Android 13+, runtime permission) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- Phase 3: squad voice room — speakerphone / in-call audio mode. -->
-    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
-
     <!-- Phase 2: floating HUD bubble over the game. SYSTEM_ALERT_WINDOW is a
          special permission: the user grants it in Settings ("Display over
          other apps"). The HUD service runs as a foreground service of type
@@ -63,13 +60,5 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="floating in-game stream controls" />
         </service>
-
-        <!-- Phase 3: squad voice room. Type microphone: the service captures
-             the mic for WebRTC (FOREGROUND_SERVICE_MICROPHONE was already
-             declared for the stream service). -->
-        <service
-            android:name=".VoiceService"
-            android:exported="false"
-            android:foregroundServiceType="microphone" />
     </application>
 </manifest>
