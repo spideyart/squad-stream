@@ -14,7 +14,10 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -241,6 +245,9 @@ class MainActivity : ComponentActivity() {
         val voiceConnected by StreamState.voiceConnected.collectAsStateWithLifecycle()
         val voiceCode by StreamState.voiceRoomCode.collectAsStateWithLifecycle()
         val voicePeers by StreamState.voicePeers.collectAsStateWithLifecycle()
+        val voicePeerMap by StreamState.voicePeerMap.collectAsStateWithLifecycle()
+        val voiceLevels by StreamState.voiceLevels.collectAsStateWithLifecycle()
+        val myVoiceLevel by StreamState.myVoiceLevel.collectAsStateWithLifecycle()
         val voiceMicMuted by StreamState.voiceMicMuted.collectAsStateWithLifecycle()
         val voiceSpeakerOn by StreamState.voiceSpeakerOn.collectAsStateWithLifecycle()
 
@@ -423,6 +430,19 @@ class MainActivity : ComponentActivity() {
                 singleLine = true
             )
             if (!voiceConnected) {
+                Button(
+                    onClick = {
+                        if (voiceName.isBlank()) {
+                            toast("Type your name first")
+                        } else {
+                            saveVoicePrefs()
+                            toast("Name saved — you'll join as ${voiceName.trim()}")
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Save name") }
+            }
+            if (!voiceConnected) {
                 OutlinedTextField(
                     value = joinCode,
                     onValueChange = { joinCode = it.uppercase() },
@@ -442,17 +462,22 @@ class MainActivity : ComponentActivity() {
                 }
             } else {
                 Text(
-                    "Room $voiceCode • ${voicePeers.size} mate${if (voicePeers.size == 1) "" else "s"}",
+                    "You: ${voiceName.ifBlank { "Player" }}",
                     style = MaterialTheme.typography.bodyLarge
                 )
+                Text(
+                    "Room $voiceCode • ${voicePeers.size} mate${if (voicePeers.size == 1) "" else "s"}",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                VoiceLevelRow(name = "You", level = myVoiceLevel)
                 if (voicePeers.isEmpty()) {
                     Text(
                         "Waiting for squad mates… share the code: $voiceCode",
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
-                voicePeers.forEach { peer ->
-                    Text("• $peer", style = MaterialTheme.typography.bodyMedium)
+                voicePeerMap.entries.sortedBy { it.value }.forEach { (id, name) ->
+                    VoiceLevelRow(name = name, level = voiceLevels[id] ?: 0f)
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
@@ -481,6 +506,51 @@ class MainActivity : ComponentActivity() {
                     "Stream settings. Keep it private — anyone with it can stream to your channel.",
                 style = MaterialTheme.typography.bodySmall
             )
+        }
+    }
+
+    /** Discord-style voice row: green ring + level bar while talking. */
+    @Composable
+    private fun VoiceLevelRow(name: String, level: Float) {
+        val speaking = level > 0.03f
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(
+                    2.dp,
+                    if (speaking) Color(0xFF2E7D32) else Color(0xFFE0E0E0),
+                    RoundedCornerShape(10.dp)
+                )
+                .padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    if (speaking) "● " else "○ ",
+                    color = if (speaking) Color(0xFF2E7D32) else Color.Gray
+                )
+                Text(name, style = MaterialTheme.typography.bodyLarge)
+                if (speaking) {
+                    Text(
+                        "  speaking",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF2E7D32)
+                    )
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .background(Color(0xFFE0E0E0), RoundedCornerShape(3.dp))
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(level.coerceIn(0f, 1f))
+                        .height(6.dp)
+                        .background(Color(0xFF2E7D32), RoundedCornerShape(3.dp))
+                )
+            }
         }
     }
 
