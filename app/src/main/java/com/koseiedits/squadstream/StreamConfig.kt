@@ -1,8 +1,7 @@
 package com.koseiedits.squadstream
 
-/** Which audio goes into the stream. Phase 1 uses RootEncoder's built-in
- *  MixAudioSource for mic + game audio; the custom 3-channel mixer (Phase 4)
- *  adds squad voices on top of this. */
+/** Which audio goes into the stream. RootEncoder's built-in
+ *  MixAudioSource mixes mic + game audio. */
 enum class AudioMode { MIX, INTERNAL_ONLY, MIC_ONLY }
 
 data class StreamConfig(
