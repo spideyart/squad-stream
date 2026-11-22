@@ -102,7 +102,14 @@ class AblySignaling(
             try {
                 val options = ClientOptions().apply {
                     key = apiKey
-                    clientId = clientId
+                    // NOT `clientId = clientId`: inside apply, the bare
+                    // name resolves to this ClientOptions' own (still
+                    // null) field, not the constructor parameter — a
+                    // self-assignment that connected with NO clientId.
+                    // Ably then refused the attach with 40161
+                    // ("operation not permitted as it requires an
+                    // identified client"). Qualify it explicitly.
+                    clientId = this@AblySignaling.clientId
                 }
                 val client = PubSubDevice.clientBuilder(options).build()
                 client.setAndroidContext(context.applicationContext)
