@@ -61,6 +61,10 @@ object StreamState {
     private val _myVoiceLevel = MutableStateFlow(0f)
     val myVoiceLevel: StateFlow<Float> = _myVoiceLevel.asStateFlow()
 
+    /** Peer id → mic-muted state, from the signaled `mic` messages. */
+    private val _peerMuted = MutableStateFlow<Map<String, Boolean>>(emptyMap())
+    val peerMuted: StateFlow<Map<String, Boolean>> = _peerMuted.asStateFlow()
+
     private val _voiceMicMuted = MutableStateFlow(false)
     val voiceMicMuted: StateFlow<Boolean> = _voiceMicMuted.asStateFlow()
 
@@ -89,6 +93,12 @@ object StreamState {
         _voiceLevels.value = _voiceLevels.value - peerId
     }
     fun setMyVoiceLevel(level: Float) { _myVoiceLevel.value = level.coerceIn(0f, 1f) }
+    fun setPeerMuted(peerId: String, muted: Boolean) {
+        _peerMuted.value = _peerMuted.value + (peerId to muted)
+    }
+    fun removePeerMuted(peerId: String) {
+        _peerMuted.value = _peerMuted.value - peerId
+    }
     fun setVoiceMicMuted(muted: Boolean) { _voiceMicMuted.value = muted }
     fun setVoiceSpeakerOn(on: Boolean) { _voiceSpeakerOn.value = on }
 
@@ -115,6 +125,7 @@ object StreamState {
         _voicePeers.value = emptyList()
         _voicePeerMap.value = emptyMap()
         _voiceLevels.value = emptyMap()
+        _peerMuted.value = emptyMap()
         _myVoiceLevel.value = 0f
         _voiceMicMuted.value = false
         _voiceSpeakerOn.value = true
