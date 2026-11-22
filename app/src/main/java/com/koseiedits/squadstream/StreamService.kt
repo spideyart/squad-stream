@@ -55,14 +55,11 @@ import com.pedro.library.generic.GenericStream
  * Audio (Phase 1): RootEncoder's built-in MixAudioSource mixes the mic
  * (VOICE_COMMUNICATION + hardware echo canceler + noise suppressor) with
  * internal game audio (AudioPlaybackCapture, USAGE_GAME + USAGE_MEDIA).
- * The custom 3-channel PCM mixer in Phase 4 adds squad voices as a third
- * source — the library cannot mix WebRTC audio, so that part is ours.
  *
  * Audio (Phase 2): the HUD mix sliders drive applyAudioMix(), which swaps
  * the audio source at runtime (changeAudioSource is safe while streaming):
  * Mix ↔ Mic-only ↔ Game-only ↔ silence. The library has no per-source
- * gain, so a slider at 0 switches its source off; true per-channel gain
- * (0–100 volume, not just on/off) arrives with the Phase 4 mixer.
+ * gain, so a slider at 0 switches its source off.
  */
 class StreamService : Service(), ConnectChecker {
 
@@ -77,8 +74,6 @@ class StreamService : Service(), ConnectChecker {
         // Phase 2 — HUD commands.
         const val ACTION_SET_MIC_GAIN = "com.koseiedits.squadstream.ACTION_SET_MIC_GAIN"
         const val ACTION_SET_GAME_GAIN = "com.koseiedits.squadstream.ACTION_SET_GAME_GAIN"
-        const val ACTION_TOGGLE_SQUAD_MUTE =
-            "com.koseiedits.squadstream.ACTION_TOGGLE_SQUAD_MUTE"
 
         const val EXTRA_GAIN = "gain"
 
@@ -139,7 +134,6 @@ class StreamService : Service(), ConnectChecker {
             ACTION_STOP -> handleStop()
             ACTION_SET_MIC_GAIN -> handleSetMicGain(intent)
             ACTION_SET_GAME_GAIN -> handleSetGameGain(intent)
-            ACTION_TOGGLE_SQUAD_MUTE -> handleToggleSquadMute()
         }
         return START_NOT_STICKY
     }
@@ -251,8 +245,7 @@ class StreamService : Service(), ConnectChecker {
 
             val projection = mediaProjection ?: return false
             genericStream.changeVideoSource(ScreenSource(applicationContext, projection))
-            // Phase 2: the initial audio source comes from the live mix gains
-            // (MainActivity's audio-mode radio writes them before Start).
+            // The initial audio source comes from the live mix gains.
             currentAudioKind = audioKindForGains()
             genericStream.changeAudioSource(audioSourceForGains(projection))
             applyLiveBadgeOverlay(cfg)
@@ -463,16 +456,6 @@ class StreamService : Service(), ConnectChecker {
     private fun handleSetGameGain(intent: Intent) {
         StreamState.setGameGain(intent.getIntExtra(EXTRA_GAIN, 100))
         applyAudioMix()
-        if (!StreamState.isStreaming.value) stopSelf()
-    }
-
-    private fun handleToggleSquadMute() {
-        val muted = !StreamState.squadMuted.value
-        StreamState.setSquadMuted(muted)
-        StreamState.addLog(
-            if (muted) "Squad muted (takes effect in Phase 3)"
-            else "Squad unmuted"
-        )
         if (!StreamState.isStreaming.value) stopSelf()
     }
 
