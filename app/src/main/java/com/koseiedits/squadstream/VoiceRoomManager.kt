@@ -1,6 +1,7 @@
 package com.koseiedits.squadstream
 
 import android.content.Context
+import android.content.Intent
 import android.media.AudioManager
 import android.os.Handler
 import android.os.HandlerThread
@@ -102,13 +103,17 @@ class VoiceRoomManager(private val appContext: Context) {
             val sig = AblySignaling(apiKey, code)
             signaling = sig
             scope.launch { sig.incoming.collect { handleSignal(it) } }
-            sig.start {
-                sig.send(SignalMessage(type = SignalTypes.JOIN, from = myId, name = myName))
-            }
+            sig.start(
+                onJoined = {
+                    sig.send(SignalMessage(type = SignalTypes.JOIN, from = myId, name = myName))
+                    StreamState.setVoiceConnected(true)
+                    StreamState.addLog("Joined voice room $code")
+                },
+                onFailed = { handleSignalingFailed() },
+            )
             joined = true
             StreamState.setVoiceRoomCode(code)
-            StreamState.setVoiceConnected(true)
-            StreamState.addLog("Joined voice room $code")
+            StreamState.addLog("Connecting to voice room $code…")
             startLevelPoll()
         }
     }
@@ -150,6 +155,29 @@ class VoiceRoomManager(private val appContext: Context) {
             rtcThread.quitSafely()
         }
         scope.cancel()
+    }
+
+    /**
+     * Ably could not connect (wrong/expired key, or no network). Fail
+     * loudly instead of sitting in a dead room: the app used to mark
+     * itself "connected" before attach and then show "Waiting for squad
+     * mates…" forever while signaling was dead — no names, no voice, the
+     * mic never started, and nothing told the user why.
+     */
+    private fun handleSignalingFailed() {
+        rtcHandler.post {
+            if (!joined) return@post
+            StreamState.addLog("Voice room couldn't connect — key may be wrong or expired")
+            leaveInternal()
+            try {
+                signaling?.stop()
+            } catch (_: Exception) {
+            }
+            try {
+                appContext.stopService(Intent(appContext, VoiceService::class.java))
+            } catch (_: Exception) {
+            }
+        }
     }
 
     // ---- mic / speaker / squad mute ----
