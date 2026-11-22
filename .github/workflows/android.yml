@@ -32,8 +32,7 @@ jobs:
           gradle-version: "8.11"
 
       - name: Build debug APK
-        env:
-          ABLY_API_KEY: ${{ secrets.ABLY_API_KEY }}
+        
         run: gradle assembleDebug --stacktrace
 
       - name: Upload APK
