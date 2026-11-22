@@ -49,6 +49,18 @@ object StreamState {
     private val _voicePeers = MutableStateFlow<List<String>>(emptyList())
     val voicePeers: StateFlow<List<String>> = _voicePeers.asStateFlow()
 
+    /** Peer id → display name, for the Discord-style speaking rows. */
+    private val _voicePeerMap = MutableStateFlow<Map<String, String>>(emptyMap())
+    val voicePeerMap: StateFlow<Map<String, String>> = _voicePeerMap.asStateFlow()
+
+    /** Peer id → live mic level 0..1, from WebRTC stats (~3x/sec). */
+    private val _voiceLevels = MutableStateFlow<Map<String, Float>>(emptyMap())
+    val voiceLevels: StateFlow<Map<String, Float>> = _voiceLevels.asStateFlow()
+
+    /** My own mic level 0..1. */
+    private val _myVoiceLevel = MutableStateFlow(0f)
+    val myVoiceLevel: StateFlow<Float> = _myVoiceLevel.asStateFlow()
+
     private val _voiceMicMuted = MutableStateFlow(false)
     val voiceMicMuted: StateFlow<Boolean> = _voiceMicMuted.asStateFlow()
 
@@ -69,6 +81,14 @@ object StreamState {
     fun setVoiceRoomCode(code: String) { _voiceRoomCode.value = code }
     fun setVoiceConnected(connected: Boolean) { _voiceConnected.value = connected }
     fun setVoicePeers(peers: List<String>) { _voicePeers.value = peers }
+    fun setVoicePeerMap(peers: Map<String, String>) { _voicePeerMap.value = peers }
+    fun setVoiceLevel(peerId: String, level: Float) {
+        _voiceLevels.value = _voiceLevels.value + (peerId to level.coerceIn(0f, 1f))
+    }
+    fun removeVoiceLevel(peerId: String) {
+        _voiceLevels.value = _voiceLevels.value - peerId
+    }
+    fun setMyVoiceLevel(level: Float) { _myVoiceLevel.value = level.coerceIn(0f, 1f) }
     fun setVoiceMicMuted(muted: Boolean) { _voiceMicMuted.value = muted }
     fun setVoiceSpeakerOn(on: Boolean) { _voiceSpeakerOn.value = on }
 
@@ -93,6 +113,9 @@ object StreamState {
         _voiceRoomCode.value = ""
         _voiceConnected.value = false
         _voicePeers.value = emptyList()
+        _voicePeerMap.value = emptyMap()
+        _voiceLevels.value = emptyMap()
+        _myVoiceLevel.value = 0f
         _voiceMicMuted.value = false
         _voiceSpeakerOn.value = true
     }
