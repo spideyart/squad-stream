@@ -315,6 +315,24 @@ running, with no crash and no overheating warning in 10 minutes of play.
 
 ## Known limits (honest)
 
+- **Voice room: if nobody shows up, check the key first.** The room
+  only exists if Ably connects. The app now fails loudly instead of
+  sitting in a dead room: if attach fails (wrong/expired key, or no
+  network) it leaves the room and logs "Voice room couldn't connect".
+  The usual causes, in order: (1) the GitHub secret `ABLY_API_KEY`
+  still holds the OLD key after a rotation — update the secret, then a
+  new build bakes the new key in (updating the secret alone changes
+  nothing until the next build); (2) a phone has the old key typed in
+  the paste field — it beats the built-in key, tap **Clear saved key**;
+  (3) the other phone runs an older APK without the baked-in key —
+  everyone must install the SAME latest APK; (4) the two phones typed
+  different room codes — compare them letter by letter.
+- **Mic starts with the call, not with the room.** WebRTC captures the
+  mic once a PeerConnection exists. If no one is in the room, the mic
+  is idle by design — no mic indicator yet is normal, not a bug.
+- **Names show but no voice = network (ICE).** If both phones list each
+  other but hear nothing, the direct connection failed (mobile-data
+  NAT). Next fix for that is a free TURN server.
 - **Rotation:** Phase 1 encodes landscape 1280×720, rotation 0. If you
   start the stream from a portrait screen, the image is scaled, not
   rotated. A rotation-aware mode comes with the Phase 2 HUD work.
