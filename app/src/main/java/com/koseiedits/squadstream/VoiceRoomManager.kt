@@ -18,6 +18,7 @@ import org.webrtc.MediaConstraints
 import org.webrtc.MediaStream
 import org.webrtc.PeerConnection
 import org.webrtc.PeerConnectionFactory
+import org.webrtc.RTCStatsCollectorCallback
 import org.webrtc.RtpReceiver
 import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
@@ -108,6 +109,7 @@ class VoiceRoomManager(private val appContext: Context) {
             StreamState.setVoiceRoomCode(code)
             StreamState.setVoiceConnected(true)
             StreamState.addLog("Joined voice room $code")
+            startLevelPoll()
         }
     }
 
@@ -117,6 +119,7 @@ class VoiceRoomManager(private val appContext: Context) {
 
     private fun leaveInternal() {
         if (!joined) return
+        stopLevelPoll()
         signaling?.send(SignalMessage(type = SignalTypes.LEAVE, from = myId))
         // Let the leave message go out before tearing the channel down.
         rtcHandler.postDelayed({
@@ -342,6 +345,7 @@ class VoiceRoomManager(private val appContext: Context) {
         }
         remoteTracks.remove(peerId)
         peerNames.remove(peerId)
+        StreamState.removeVoiceLevel(peerId)
         updatePeersFlow()
         StreamState.addLog("Squad mate left")
     }
@@ -361,6 +365,73 @@ class VoiceRoomManager(private val appContext: Context) {
 
     private fun updatePeersFlow() {
         StreamState.setVoicePeers(peerNames.values.sorted())
+        StreamState.setVoicePeerMap(peerNames.toMap())
+    }
+
+    // ---- speaking levels (Discord-style: who is talking, how loud) ----
+    //
+    // WebRTC's getStats reports an audioLevel (0..1) on each audio track.
+    // Poll every 300 ms while in the room and push the levels to
+    // StreamState; the UI draws a green ring + level bar per person.
+    // Honest limit: if this WebRTC build ever stops reporting audioLevel
+    // for remote tracks, the rings stay dark — the voice itself is
+    // unaffected, only the indicator goes quiet.
+
+    private val levelPoll = object : Runnable {
+        override fun run() {
+            if (!joined) return
+            pollLevels()
+            rtcHandler.postDelayed(this, 300)
+        }
+    }
+
+    private fun startLevelPoll() {
+        rtcHandler.removeCallbacks(levelPoll)
+        rtcHandler.post(levelPoll)
+    }
+
+    private fun stopLevelPoll() {
+        rtcHandler.removeCallbacks(levelPoll)
+    }
+
+    private fun pollLevels() {
+        val localId = localTrack?.id()
+        peers.forEach { (_, pc) ->
+            try {
+                pc.getStats(RTCStatsCollectorCallback { report ->
+                    var myLevel = -1f
+                    val peerLevels = mutableMapOf<String, Float>()
+                    for (stat in report.statsMap.values) {
+                        val level =
+                            (stat.members["audioLevel"] as? Number)?.toFloat() ?: continue
+                        when (stat.type) {
+                            "track" -> {
+                                val trackId = stat.members["trackIdentifier"] as? String
+                                    ?: continue
+                                if (trackId == localId) {
+                                    myLevel = level
+                                } else {
+                                    remoteTracks.entries
+                                        .firstOrNull { it.value.id() == trackId }
+                                        ?.let { peerLevels[it.key] = level }
+                                }
+                            }
+                            "media-source" -> {
+                                // Fallback for my own mic level.
+                                if (stat.members["kind"] == "audio" && myLevel < 0f) {
+                                    myLevel = level
+                                }
+                            }
+                        }
+                    }
+                    if (myLevel >= 0f) StreamState.setMyVoiceLevel(myLevel)
+                    peerLevels.forEach { (peerId, level) ->
+                        StreamState.setVoiceLevel(peerId, level)
+                    }
+                })
+            } catch (_: Exception) {
+            }
+        }
     }
 
     // ---- PeerConnection observer (one per peer) ----
