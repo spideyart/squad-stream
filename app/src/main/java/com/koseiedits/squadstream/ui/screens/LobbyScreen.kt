@@ -41,6 +41,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.koseiedits.squadstream.BuildConfig
 import com.koseiedits.squadstream.StreamState
 import com.koseiedits.squadstream.ui.theme.DiscordBackground
 import com.koseiedits.squadstream.ui.theme.DiscordBlurple
@@ -315,6 +316,17 @@ fun LobbyScreen(
                 }
             }
         }
+
+        // Build stamp: the only way to tell on the phone which APK is
+        // installed. The old and new builds looked identical until this
+        // line existed, so a failed update left the old app running with
+        // no visible difference.
+        Spacer(Modifier.height(16.dp))
+        Text(
+            "SquadStream ${BuildConfig.VERSION_NAME}",
+            style = MaterialTheme.typography.bodySmall,
+            color = DiscordTextMuted
+        )
     }
 }
 
