@@ -95,7 +95,6 @@ class HudService : Service() {
     private var elapsedText: TextView? = null
     private var bitrateText: TextView? = null
     private var micButton: Button? = null
-    private var squadButton: Button? = null
     private var micSeek: SeekBar? = null
     private var gameSeek: SeekBar? = null
     private var startStopButton: Button? = null
@@ -339,7 +338,6 @@ class HudService : Service() {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
         }
         micButton = makeButton("Mic: ON") { onMicToggle() }
-        squadButton = makeButton("Squad: ON") { onSquadToggle() }
         micSeek = makeSeekBar { gain -> sendGain(StreamService.ACTION_SET_MIC_GAIN, gain) }
         gameSeek = makeSeekBar { gain -> sendGain(StreamService.ACTION_SET_GAME_GAIN, gain) }
         startStopButton = makeButton("START STREAM") { onStartStop() }
@@ -351,7 +349,6 @@ class HudService : Service() {
         content.addView(bitrateText)
         content.addView(divider())
         content.addView(micButton)
-        content.addView(squadButton)
         content.addView(label("Mic volume"))
         content.addView(micSeek)
         content.addView(label("Game volume"))
@@ -467,13 +464,6 @@ class HudService : Service() {
         sendGain(StreamService.ACTION_SET_MIC_GAIN, gain)
     }
 
-    /** Squad mute = stop hearing the squad (my mic to them is untouched). */
-    private fun onSquadToggle() {
-        startService(Intent(this, StreamService::class.java).apply {
-            action = StreamService.ACTION_TOGGLE_SQUAD_MUTE
-        })
-    }
-
     private fun onStartStop() {
         if (StreamState.isStreaming.value) {
             startService(Intent(this, StreamService::class.java).apply {
@@ -512,7 +502,6 @@ class HudService : Service() {
         serviceScope.launch { StreamState.encoderBitrateBps.collect { refreshAll() } }
         serviceScope.launch { StreamState.micGain.collect { refreshAll() } }
         serviceScope.launch { StreamState.gameGain.collect { refreshAll() } }
-        serviceScope.launch { StreamState.squadMuted.collect { refreshAll() } }
         if (!tickRunning) {
             tickRunning = true
             elapsedHandler.post(elapsedTick)
@@ -539,11 +528,6 @@ class HudService : Service() {
         micButton?.text = if (micOn) "Mic: ON — tap to mute" else "Mic: MUTED — tap to unmute"
         micButton?.background = roundedBg(
             if (micOn) Color.parseColor("#2B2D31") else Color.parseColor("#DA373C"), dp(8)
-        )
-        squadButton?.text =
-            if (StreamState.squadMuted.value) "Squad: MUTED — tap to unmute" else "Squad: ON — tap to mute"
-        squadButton?.background = roundedBg(
-            if (StreamState.squadMuted.value) Color.parseColor("#DA373C") else Color.parseColor("#2B2D31"), dp(8)
         )
         micSeek?.let { if (it.progress != StreamState.micGain.value) it.progress = StreamState.micGain.value }
         gameSeek?.let { if (it.progress != StreamState.gameGain.value) it.progress = StreamState.gameGain.value }
